@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, toRaw } from "vue";
 import type { Blog } from "./types/Blog";
 import { useDataStore } from "./stores/data";
+import router from "./router";
 
 function getNewBlog(): Blog {
   return {
@@ -15,9 +16,11 @@ function getNewBlog(): Blog {
 const current = ref(getNewBlog());
 
 function handleSubmit() {
-  useDataStore().addBlog(current.value);
+  useDataStore().addBlog(toRaw(current.value));
   current.value = getNewBlog();
 }
+
+router.push("/");
 </script>
 
 <template>
@@ -40,7 +43,10 @@ function handleSubmit() {
     </template>
   </header>
   <div class="view">
-    <RouterView v-model="current" />
+    <RouterView v-slot="{ Component }">
+      <component v-if="$route.name == '主页'" :is="Component" />
+      <component v-else :is="Component" v-model="current" />
+    </RouterView>
   </div>
   <RouterLink to="/editor">
     <button v-if="$route.name == '主页'" class="spirit shadow">+</button>

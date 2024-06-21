@@ -34,7 +34,7 @@ export namespace IDB {
         .then((db) => {
           const transaction = db.transaction([STORE_NAME], "readwrite");
           const store = transaction.objectStore(STORE_NAME);
-          const request = store.add(JSON.stringify(blog), blog.id);
+          const request = store.add(blog);
 
           request.onsuccess = () => {
             resolve("Data saved successfully.");
@@ -78,7 +78,7 @@ export namespace IDB {
 
           request.onsuccess = (event: Event) => {
             const blogs: Blog[] = (event.target as IDBRequest).result;
-            resolve(blogs.map((blog: any) => JSON.parse(blog)).reverse());
+            resolve(blogs.reverse());
           };
 
           request.onerror = (event: Event) => {

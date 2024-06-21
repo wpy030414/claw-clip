@@ -17,7 +17,7 @@ const router = createRouter({
 });
 
 router.afterEach((to) => {
-  document.title = `${to.name?.toString()} | 本地空间`;
+  document.title = `${to.name?.toString()} | 小怪兽的旅行日记`;
 });
 
 export default router;
