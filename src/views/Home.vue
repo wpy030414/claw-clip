@@ -12,14 +12,25 @@ function sync() {
 }
 
 sync();
+
+function bufferReader(
+  ab: ArrayBuffer | string,
+  type: "video/mp4" | "image/jpeg",
+) {
+  return URL.createObjectURL(new Blob([ab], { type: type }));
+}
 </script>
 
 <template>
   <div class="notice" v-if="blogs?.length == 0">空空如也</div>
   <div class="shadow" v-for="b in blogs">
     <p>{{ b.text }}</p>
-    <video v-for="v in b.videos" :src="v" controls></video>
-    <img v-for="i in b.images" :src="i" alt="" />
+    <video
+      v-for="v in b.videos"
+      :src="bufferReader(v, 'video/mp4')"
+      controls
+    ></video>
+    <img v-for="i in b.images" :src="bufferReader(i, 'image/jpeg')" alt="" />
     <p class="date">
       {{
         new Date(b.id + 8 * 60 * 60 * 1000)

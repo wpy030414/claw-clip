@@ -10,12 +10,12 @@ export interface Blog {
   text: string;
 
   /**
-   * 视频集合。元素以 Blob 形式存储。
+   * 视频集合。元素以流形式存储。
    */
-  videos: string[];
+  videos: (ArrayBuffer | string)[];
 
   /**
-   * 图片集合。元素以 Base64 形式存储。
+   * 图片集合。元素以流形式存储。
    */
-  images: string[];
+  images: (ArrayBuffer | string)[];
 }
