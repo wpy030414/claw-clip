@@ -1,48 +1,6 @@
 * {
   margin: 0;
   padding: 0;
-}
-
-:root {
-  --theme-c: pink;
-}
-
-a {
-  text-decoration: none;
-}
-
-.shadow {
-  box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.2);
-}
-
-button.spirit {
-  position: fixed;
-  right: 2.4rem;
-  bottom: 2.4rem;
-  width: 3.8rem;
-  height: 3.8rem;
-  background: var(--theme-c);
-  outline: 0;
-  border: 0;
-  border-radius: 50%;
-  color: white;
-  font-size: 2rem;
-}
-
-button.top {
-  position: absolute;
-  width: 3.8rem;
-  height: 100%;
-  background: transparent;
-  outline: 0;
-  border: 0;
-  font-size: 1.2rem;
-
-  &.left {
-    left: 0;
-  }
-
-  &.right {
-    right: 0;
-  }
+  font-family: Inter, "Helvetica Neue", Helvetica, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }

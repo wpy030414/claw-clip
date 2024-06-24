@@ -1,65 +1,71 @@
 <script setup lang="ts">
-import { useDataStore } from "@/stores/data";
+import MediaPile from "@/components/MediaPile.vue";
+import { ref, watch } from "vue";
 import type { Blog } from "@/types/Blog";
-import { ref } from "vue";
+import { deleteSingle, download } from "@/apis/datasource";
 
-const blogs = ref<Blog[]>();
+const total = ref(0);
+const blogs = ref<Blog[]>([]);
+
+const isLoading = ref(true);
+
+const pageSize = ref(10);
+const page = ref(1);
 
 function sync() {
-  useDataStore()
-    .load()
-    .then((bs) => (blogs.value = bs));
+  download(pageSize.value, page.value - 1).then((data) => {
+    total.value = data.total;
+    blogs.value = data.blogs;
+    isLoading.value = false;
+  });
 }
 
-sync();
-
-function bufferReader(
-  ab: ArrayBuffer | string,
-  type: "video/mp4" | "image/jpeg",
-) {
-  return URL.createObjectURL(new Blob([ab], { type: type }));
-}
+watch(page, sync, { immediate: true });
 </script>
 
 <template>
-  <div class="notice" v-if="blogs?.length == 0">空空如也</div>
-  <div class="shadow" v-for="b in blogs">
+  <el-skeleton v-if="isLoading" :rows="5" animated />
+  <el-empty v-if="!isLoading && !total" description="空空如也" />
+
+  <el-card class="blog" v-for="b in blogs" shadow="hover">
     <p>{{ b.text }}</p>
-    <video
-      v-for="v in b.videos"
-      :src="bufferReader(v, 'video/mp4')"
-      controls
-    ></video>
-    <img v-for="i in b.images" :src="bufferReader(i, 'image/jpeg')" alt="" />
+    <MediaPile :videos="b.videos" :images="b.images" />
     <p class="date">
       {{
-        new Date(b.id + 8 * 60 * 60 * 1000)
+        new Date(b.date.getTime() + 8 * 60 * 60 * 1000)
           .toISOString()
           .replace("T", " ")
           .substring(0, 16)
       }}
-      <button
+      <el-button
+        class="delete"
+        type="danger"
+        text
+        size="small"
         @click="
-          useDataStore().removeBlog(b);
+          deleteSingle(b.id!);
           sync();
         "
       >
-        &nbsp;x&nbsp;
-      </button>
+        <el-icon><Delete /></el-icon>
+      </el-button>
     </p>
-  </div>
+  </el-card>
+
+  <el-pagination
+    v-if="total"
+    class="pager"
+    layout="prev, pager, next"
+    :total="total"
+    v-model:pageSize="pageSize"
+    v-model:currentPage="page"
+  />
 </template>
 
 <style scoped>
-.notice {
-  color: lightgray;
-  text-align: center;
-}
-
-div {
-  padding: 1rem;
-  border-radius: 0.35rem;
-  margin-bottom: 1rem;
+.blog {
+  border-radius: 0.6rem;
+  margin-bottom: 1.8rem;
 
   & video,
   & img {
@@ -71,5 +77,15 @@ div {
     margin-top: 1rem;
     color: lightgrey;
   }
+
+  & .delete {
+    position: relative;
+    bottom: 0.2rem;
+    float: right;
+  }
+}
+
+.pager {
+  justify-content: center;
 }
 </style>

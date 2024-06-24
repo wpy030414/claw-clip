@@ -21,3 +21,7 @@ router.afterEach((to) => {
 });
 
 export default router;
+
+export function goHome() {
+  router.push("/");
+}

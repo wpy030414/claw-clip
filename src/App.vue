@@ -1,74 +1,67 @@
 <script setup lang="ts">
-import { ref, toRaw } from "vue";
-import type { Blog } from "./types/Blog";
-import { useDataStore } from "./stores/data";
-import router from "./router";
+import NaviBar from "@/components/NaviBar.vue";
+import { useEditedStore } from "@/stores/edited";
+import { ElMessageBox } from "element-plus";
+import { goHome } from "@/router";
 
-function getNewBlog(): Blog {
-  return {
-    id: new Date().getTime(),
-    text: "",
-    videos: [],
-    images: [],
-  };
+const store = useEditedStore();
+
+function handleQuit() {
+  if (!store.isCurrentBlank())
+    ElMessageBox.confirm("你将会丢失正在编辑的内容", "警告", {
+      confirmButtonText: "放弃",
+      cancelButtonText: "手滑了",
+      type: "warning",
+    }).then(() => {
+      store.setCurrentBlank();
+      goHome();
+    });
+  else goHome();
 }
-
-const current = ref(getNewBlog());
-
-function handleSubmit() {
-  useDataStore().addBlog(toRaw(current.value));
-  current.value = getNewBlog();
-}
-
-router.push("/");
 </script>
 
 <template>
-  <header class="shadow">
-    <template v-if="$route.name == '主页'">
-      <p>主页</p>
-    </template>
-    <template v-else>
-      <p>编辑</p>
-      <button class="top left" @click="$router.push('/')">🔙</button>
-      <button
-        class="top right"
-        @click="
-          handleSubmit();
-          $router.push('/');
-        "
-      >
-        💾
-      </button>
-    </template>
-  </header>
-  <div class="view">
-    <RouterView v-slot="{ Component }">
-      <component v-if="$route.name == '主页'" :is="Component" />
-      <component v-else :is="Component" v-model="current" />
-    </RouterView>
-  </div>
-  <RouterLink to="/editor">
-    <button v-if="$route.name == '主页'" class="spirit shadow">+</button>
-  </RouterLink>
+  <el-container>
+    <el-header>
+      <navi-bar
+        v-if="$route.name == '主页'"
+        :rightFn="{
+          name: 'Plus',
+          action: () => $router.push('/editor'),
+        }"
+        title="主页"
+      />
+      <navi-bar
+        v-if="$route.name == '编辑'"
+        :leftFn="{
+          name: 'Close',
+          action: handleQuit,
+        }"
+        :rightFn="{
+          name: 'Promotion',
+          action: useEditedStore().handleSubmit,
+        }"
+        title="编辑"
+      />
+    </el-header>
+    <el-main class="view">
+      <RouterView />
+    </el-main>
+  </el-container>
 </template>
 
 <style scoped>
-header {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: 3.8rem;
-  background: var(--theme-c);
-  color: white;
-  font-size: 1.5rem;
-  text-align: center;
-}
-
 .view {
   overflow-y: auto;
-  height: calc(100vh - 3.8rem - 1rem * 2);
-  padding: 1rem;
+  height: calc(100vh - 60px);
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    background-color: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #eee;
+  }
 }
 </style>
