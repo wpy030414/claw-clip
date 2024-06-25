@@ -32,13 +32,14 @@ const router = createRouter({
     {
       path: "/me",
       name: "我的",
-      component: () => import("@/views/Empty.vue"),
+      component: () => import("@/views/Me.vue"),
     },
   ],
 });
 
-router.afterEach((to) => {
-  document.title = `${to.name?.toString()} | ${globalConfig.name}`;
+router.afterEach(() => {
+  const { zh, en } = globalConfig.name;
+  document.title = `${zh} | ${en}`;
 });
 
 export default router;

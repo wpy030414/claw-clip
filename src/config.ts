@@ -1,5 +1,8 @@
 export const globalConfig = {
-  name: "鲨鱼夹",
+  name: {
+    zh: "鲨鱼夹",
+    en: "ClawClip",
+  },
 
   enableUploadingVideo: false,
   enableStoringLocally: true,

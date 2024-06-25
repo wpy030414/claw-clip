@@ -24,6 +24,7 @@ function handleChange(e: Event, from: "v" | "i", index: number) {
 </script>
 
 <template>
+  <el-text size="small">已写 {{ store.current.text.length }} 字</el-text>
   <el-input
     v-model="b.text"
     :rows="12"
