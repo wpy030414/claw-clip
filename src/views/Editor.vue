@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import type { Blog } from "@/types/Blog";
+import { useEditedStore } from "@/stores/edited";
+import { ref } from "vue";
 
-const data = defineModel<Blog>();
+const store = useEditedStore();
+const b = ref(store.current);
 
 function handleChange(e: Event, from: "v" | "i", index: number) {
   const file = (e.target as HTMLInputElement).files![0];
 
   const reader = new FileReader();
-  reader.onload = function () {
+  reader.onload = () => {
     switch (from) {
       case "v":
-        data.value!.videos[index] = reader.result as ArrayBuffer;
+        b.value.videos[index] = reader.result as ArrayBuffer;
         break;
       case "i":
-        data.value!.images[index] = reader.result as ArrayBuffer;
+        b.value.images[index] = reader.result as ArrayBuffer;
         break;
     }
   };
@@ -22,36 +24,37 @@ function handleChange(e: Event, from: "v" | "i", index: number) {
 </script>
 
 <template>
-  <div v-if="data" class="root">
-    <textarea v-model="data.text" placeholder="记录新鲜事..."></textarea>
-    <button @click="data.videos.push('')">添加视频</button>
-    <div v-for="(_, i) in data.videos" :key="i">
-      <button @click="data.videos.splice(i, 1)">&nbsp;x&nbsp;</button>
-      <input type="file" @change="(e) => handleChange(e, 'v', i)" />
-    </div>
-    <button @click="data.images.push('')">添加图片</button>
-    <div v-for="(_, i) in data.images" :key="i">
-      <button @click="data.images.splice(i, 1)">&nbsp;x&nbsp;</button>
-      <input type="file" @change="(e) => handleChange(e, 'i', i)" />
-    </div>
+  <el-input
+    v-model="b.text"
+    :rows="12"
+    resize="none"
+    type="textarea"
+    placeholder="记录新鲜事..."
+  />
+  <el-divider />
+  <el-button @click="b.videos.push({} as ArrayBuffer)">添加视频</el-button>
+  <div class="file" v-for="(_, i) of b.videos" :key="i">
+    <el-button @click="b.videos.splice(i, 1)" type="danger" text size="small">
+      <el-icon><Delete /></el-icon>
+    </el-button>
+    <input type="file" @change="(e) => handleChange(e, 'v', i)" />
+  </div>
+  <el-divider />
+  <el-button @click="b.images.push({} as ArrayBuffer)">添加图片</el-button>
+  <div class="file" v-for="(_, i) of b.images" :key="i">
+    <el-button @click="b.images.splice(i, 1)" type="danger" text size="small"
+      ><el-icon><Delete /></el-icon
+    ></el-button>
+    <input type="file" @change="(e) => handleChange(e, 'i', i)" />
   </div>
 </template>
 
 <style scoped>
-.root > * {
-  display: block;
-  margin-bottom: 1rem;
-
-  & button {
-    margin-right: 1rem;
-  }
+.file {
+  margin-top: 1rem;
 }
 
-textarea {
-  width: calc(100% - 0.5rem * 2);
-  height: 20rem;
-  padding: 0.5rem;
-  resize: none;
-  font-size: 1rem;
+input {
+  margin-left: 0.5rem;
 }
 </style>

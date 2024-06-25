@@ -1,75 +1,60 @@
 <script setup lang="ts">
-import { useDataStore } from "@/stores/data";
+import BlogCard from "@/components/BlogCard.vue";
+import { ref, watch } from "vue";
 import type { Blog } from "@/types/Blog";
-import { ref } from "vue";
+import { download } from "@/apis/datasource";
 
-const blogs = ref<Blog[]>();
+const props = defineProps<{
+  sourceGetter?: Function;
+  attached?: any;
+}>();
+
+const total = ref(0);
+const blogs = ref<Blog[]>([]);
+
+const isLoading = ref(true);
+
+const pageSize = ref(3);
+const page = ref(1);
 
 function sync() {
-  useDataStore()
-    .load()
-    .then((bs) => (blogs.value = bs));
+  const fn = props.sourceGetter || download;
+  fn(pageSize.value, page.value - 1, props.attached).then((data: any) => {
+    total.value = data.total;
+    blogs.value = data.blogs;
+    isLoading.value = false;
+  });
 }
 
-sync();
-
-function bufferReader(
-  ab: ArrayBuffer | string,
-  type: "video/mp4" | "image/jpeg",
-) {
-  return URL.createObjectURL(new Blob([ab], { type: type }));
-}
+watch([props, page], sync, { immediate: true });
 </script>
 
 <template>
-  <div class="notice" v-if="blogs?.length == 0">空空如也</div>
-  <div class="shadow" v-for="b in blogs">
-    <p>{{ b.text }}</p>
-    <video
-      v-for="v in b.videos"
-      :src="bufferReader(v, 'video/mp4')"
-      controls
-    ></video>
-    <img v-for="i in b.images" :src="bufferReader(i, 'image/jpeg')" alt="" />
-    <p class="date">
-      {{
-        new Date(b.id + 8 * 60 * 60 * 1000)
-          .toISOString()
-          .replace("T", " ")
-          .substring(0, 16)
-      }}
-      <button
-        @click="
-          useDataStore().removeBlog(b);
-          sync();
-        "
-      >
-        &nbsp;x&nbsp;
-      </button>
-    </p>
-  </div>
+  <el-skeleton v-if="isLoading" :rows="5" animated />
+  <el-empty v-if="!isLoading && !total" description="空空如也" />
+
+  <BlogCard
+    v-for="b of blogs"
+    :blog="b"
+    :afterFn="{
+      star: sync,
+      del: sync,
+    }"
+    :key="b.id"
+  />
+
+  <el-pagination
+    v-if="total"
+    class="pager"
+    layout="prev, pager, next"
+    :total="total"
+    v-model:pageSize="pageSize"
+    v-model:currentPage="page"
+  />
 </template>
 
 <style scoped>
-.notice {
-  color: lightgray;
-  text-align: center;
-}
-
-div {
-  padding: 1rem;
-  border-radius: 0.35rem;
-  margin-bottom: 1rem;
-
-  & video,
-  & img {
-    margin: 1rem 0;
-    width: 100%;
-  }
-
-  & .date {
-    margin-top: 1rem;
-    color: lightgrey;
-  }
+.pager {
+  justify-content: center;
 }
 </style>
