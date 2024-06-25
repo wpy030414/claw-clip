@@ -1,47 +1,31 @@
 <script setup lang="ts">
+import { getName } from "@/router";
+
 defineProps<{
-  leftFn?: {
-    name: string;
-    action: Function;
-  };
-  rightFn?: {
-    name: string;
-    action: Function;
-  };
-  title: string;
+  views: {
+    icon: string;
+    path: string;
+  }[];
+  currentView: string;
 }>();
 </script>
 
 <template>
-  <div>
-    <el-button v-if="leftFn" class="bt left" circle @click="leftFn.action"
-      ><el-icon><component :is="leftFn.name" /></el-icon
-    ></el-button>
-    <el-text size="large" v-text="title"></el-text>
-    <el-button v-if="rightFn" class="bt right" circle @click="rightFn.action"
-      ><el-icon><component :is="rightFn.name" /></el-icon
-    ></el-button>
-  </div>
+  <el-menu
+    :default-active="views[0]?.path"
+    mode="horizontal"
+    :ellipsis="false"
+    :router="true"
+  >
+    <el-menu-item
+      v-for="v of views"
+      :index="v.path"
+      :style="`width: ${100 / views.length}%;`"
+    >
+      <el-icon><component :is="v.icon" /></el-icon>
+      {{ getName(v.path) }}
+    </el-menu-item>
+  </el-menu>
 </template>
 
-<style scoped>
-div {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  height: 100%;
-
-  & > .bt {
-    position: absolute;
-    top: calc(50% - 1rem);
-
-    &.left {
-      left: 1.5vw;
-    }
-
-    &.right {
-      right: 1.5vw;
-    }
-  }
-}
-</style>
+<style scoped></style>

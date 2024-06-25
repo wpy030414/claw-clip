@@ -1,4 +1,6 @@
 export const globalConfig = {
+  name: "鲨鱼夹",
+
   enableUploadingVideo: false,
   enableStoringLocally: true,
 

@@ -25,6 +25,11 @@ export const useEditedStore = defineStore("edited", () => {
       });
       return;
     }
+
+    const d = new Date();
+    current.value.id = d.getTime();
+    current.value.date = d;
+
     await uploadSingle(toRaw(current.value));
     setCurrentBlank();
     ElMessage({

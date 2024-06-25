@@ -33,7 +33,7 @@ function handleChange(e: Event, from: "v" | "i", index: number) {
   />
   <el-divider />
   <el-button @click="b.videos.push({} as ArrayBuffer)">添加视频</el-button>
-  <div class="file" v-for="(_, i) in b.videos" :key="i">
+  <div class="file" v-for="(_, i) of b.videos" :key="i">
     <el-button @click="b.videos.splice(i, 1)" type="danger" text size="small">
       <el-icon><Delete /></el-icon>
     </el-button>
@@ -41,7 +41,7 @@ function handleChange(e: Event, from: "v" | "i", index: number) {
   </div>
   <el-divider />
   <el-button @click="b.images.push({} as ArrayBuffer)">添加图片</el-button>
-  <div class="file" v-for="(_, i) in b.images" :key="i">
+  <div class="file" v-for="(_, i) of b.images" :key="i">
     <el-button @click="b.images.splice(i, 1)" type="danger" text size="small"
       ><el-icon><Delete /></el-icon
     ></el-button>
@@ -52,5 +52,9 @@ function handleChange(e: Event, from: "v" | "i", index: number) {
 <style scoped>
 .file {
   margin-top: 1rem;
+}
+
+input {
+  margin-left: 0.5rem;
 }
 </style>

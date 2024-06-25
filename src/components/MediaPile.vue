@@ -11,11 +11,11 @@ function bufferReader(ab: ArrayBuffer, type: "video/mp4" | "image/jpeg") {
 
 <template>
   <video
-    v-for="v in videos"
+    v-for="v of videos"
     :src="bufferReader(v, 'video/mp4')"
     controls
   ></video>
-  <img v-for="i in images" :src="bufferReader(i, 'image/jpeg')" alt="" />
+  <img v-for="i of images" :src="bufferReader(i, 'image/jpeg')" alt="" />
 </template>
 
 <style scoped>

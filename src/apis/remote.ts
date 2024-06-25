@@ -16,25 +16,29 @@ export namespace RemoteDataSource {
   }
 
   export async function uploadSingle(data: Blog) {
-    return (
-      (await request("upload", data)) as {
-        done: boolean;
-      }
-    ).done;
+    return (await request("upload", data)) as boolean;
   }
 
-  export async function download(pageSize: number, pageOffset: number) {
-    return (await request("download", {
-      pageSize: pageSize,
-      pageOffset: pageOffset,
-    })) as { total: number; blogs: Blog[] };
+  export async function download(
+    pageSize: number,
+    pageOffset: number,
+    filter: (b: Blog, _: any) => Promise<boolean>,
+  ) {
+    return await request("download", {
+      pageSize,
+      pageOffset,
+    });
   }
 
   export async function deleteSingle(id: number) {
-    return (
-      (await request("delete", id)) as {
-        done: boolean;
-      }
-    ).done;
+    return (await request("delete", id)) as boolean;
+  }
+
+  export async function isStared(id: number) {
+    return (await request("is-stared", id)) as boolean;
+  }
+
+  export async function star(id: number, enable: boolean) {
+    return (await request("star", { id, enable })) as boolean;
   }
 }

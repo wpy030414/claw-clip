@@ -1,5 +1,5 @@
 export interface Blog {
-  id?: number;
+  id: number;
 
   /**
    * 作者
@@ -28,11 +28,13 @@ export interface Blog {
 }
 
 export const EMPTY_BLOG = (): Blog => {
+  const d = new Date();
   return {
+    id: d.getTime(),
     author: "",
     text: "",
     videos: [],
     images: [],
-    date: new Date(),
+    date: d,
   };
 };
