@@ -37,7 +37,7 @@ function handleDelete(id: number) {
 </script>
 
 <template>
-  <el-card class="blog" shadow="hover">
+  <el-card class="list-view" shadow="hover">
     <p>{{ blog.text }}</p>
     <MediaPile :videos="blog.videos" :images="blog.images" />
     <p class="date">
@@ -70,25 +70,20 @@ function handleDelete(id: number) {
 </template>
 
 <style scoped>
-.blog {
-  border-radius: 0.6rem;
-  margin-bottom: 1.8rem;
+video,
+img {
+  margin: 1rem 0;
+  width: 100%;
+}
 
-  & video,
-  & img {
-    margin: 1rem 0;
-    width: 100%;
-  }
+.date {
+  margin-top: 1rem;
+  color: lightgrey;
+}
 
-  & .date {
-    margin-top: 1rem;
-    color: lightgrey;
-  }
-
-  & .op {
-    position: relative;
-    bottom: 0.2rem;
-    float: right;
-  }
+.op {
+  position: relative;
+  bottom: 0.2rem;
+  float: right;
 }
 </style>

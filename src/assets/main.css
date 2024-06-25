@@ -4,3 +4,11 @@
   font-family: Inter, "Helvetica Neue", Helvetica, "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
+
+.list-view {
+  margin-bottom: 1.2rem;
+
+  &:last-of-type {
+    margin-bottom: 0;
+  }
+}

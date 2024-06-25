@@ -41,6 +41,7 @@ export namespace LocalDataSource {
     pageOffset: number,
     filter: (b: Blog, using?: IDBTransaction) => Promise<boolean>,
   ) {
+    while (!db) await new Promise((res) => setTimeout(res, 500));
     return new Promise<{ total: number; blogs: Blog[] }>((resolve, reject) => {
       const using = use();
       const store = using.objectStore("blogs");

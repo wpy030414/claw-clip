@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import TiTleBar from "@/components/TitleBar.vue";
 import NaviBar from "@/components/NaviBar.vue";
+import { useAchievementStore } from "@/stores/achievement";
 import { useThemeStore } from "@/stores/theme";
 import { useEditedStore } from "@/stores/edited";
 import { useSearchedStore } from "@/stores/searched";
 import { ElMessageBox } from "element-plus";
 import { getName, goHome, isMainView } from "@/router";
+import { onMounted } from "vue";
 
 const theme = useThemeStore();
 const store = useEditedStore();
@@ -28,7 +30,10 @@ function handleQuitSearching() {
   goHome();
 }
 
-theme.apply();
+onMounted(() => {
+  useAchievementStore().firstCome();
+  goHome();
+});
 </script>
 
 <template>
@@ -66,13 +71,6 @@ theme.apply();
                   right: {
                     name: 'Promotion',
                     action: store.handleSubmit,
-                  },
-                };
-              case '我的':
-                return {
-                  left: {
-                    name: theme.isDark ? 'Sunny' : 'Moon',
-                    action: theme.change,
                   },
                 };
             }
