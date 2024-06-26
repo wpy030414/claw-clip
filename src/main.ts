@@ -4,6 +4,7 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 
 import "element-plus/es/components/message/style/css";
+import "element-plus/es/components/message-box/style/css";
 import * as ElementPlusIconsVue from "@element-plus/icons-vue";
 
 import App from "@/App.vue";

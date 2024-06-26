@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref, toRaw } from "vue";
 import { EMPTY_BLOG } from "@/types/Blog";
 import { ElMessage } from "element-plus";
-import { uploadSingle } from "@/apis/datasource";
+import { deleteSingle, isStared, star, uploadSingle } from "@/apis/datasource";
 import { goHome } from "@/router";
 
 export const useEditedStore = defineStore("edited", () => {
@@ -17,7 +17,11 @@ export const useEditedStore = defineStore("edited", () => {
     current.value = EMPTY_BLOG();
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(options?: {
+    usingOldDate?: boolean;
+    beSilent?: boolean;
+    noGoingHome?: boolean;
+  }) {
     if (!current.value.text) {
       ElMessage({
         message: "你还什么都没有写哦",
@@ -26,17 +30,25 @@ export const useEditedStore = defineStore("edited", () => {
       return;
     }
 
-    const d = new Date();
-    current.value.id = d.getTime();
-    current.value.date = d;
+    const oldID = current.value.id;
+    const stared = await isStared(oldID);
+    deleteSingle(oldID);
+
+    if (!options?.usingOldDate) {
+      const d = new Date();
+      current.value.id = d.getTime();
+      current.value.date = d;
+    }
 
     await uploadSingle(toRaw(current.value));
+    if (stared) star(current.value.id, true);
     setCurrentBlank();
-    ElMessage({
-      message: "发布成功",
-      type: "success",
-    });
-    goHome();
+    if (!options?.beSilent)
+      ElMessage({
+        message: "发布成功",
+        type: "success",
+      });
+    if (!options?.noGoingHome) goHome();
   }
 
   return {

@@ -1,4 +1,5 @@
 import { download } from "@/apis/datasource";
+import { useAchievementStore } from "@/stores/achievement";
 
 export interface Achievement {
   /**
@@ -24,9 +25,8 @@ export const achievementZhCn = [
 ];
 
 export function usedDays() {
-  const raw = localStorage.getItem("first-come");
-  const firstCome = raw ? new Date(JSON.parse(raw)) : new Date();
-  const delta = new Date().getTime() - firstCome.getTime();
+  const firstComeDate = new Date(useAchievementStore().firstCome);
+  const delta = new Date().getTime() - firstComeDate.getTime();
   return delta / (1000.0 * 60 * 60 * 24);
 }
 

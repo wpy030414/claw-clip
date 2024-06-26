@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import MediaPile from "@/components/MediaPile.vue";
 import { ref, toRaw } from "vue";
 import { deleteSingle, isStared, star } from "@/apis/datasource";
 import type { Blog } from "@/types/Blog";
 import { ElMessage } from "element-plus";
+import { useEditedStore } from "@/stores/edited";
+import router from "@/router";
+import { warning } from "@/utils";
 
 const props = defineProps<{
   blog: Blog;
@@ -13,36 +15,63 @@ const props = defineProps<{
   };
 }>();
 
+function bufferReader(ab: ArrayBuffer, type: "video/mp4" | "image/jpeg") {
+  return URL.createObjectURL(new Blob([ab], { type: type }));
+}
+
+function handleAlter() {
+  router.push("/editor");
+  useEditedStore().current = props.blog;
+}
+
+function handleDelete() {
+  warning("你确定要删除这条博客吗？", "删除", () => {
+    deleteSingle(props.blog.id);
+    ElMessage({
+      message: "已删除",
+      type: "success",
+    });
+    props.afterFn.del();
+  });
+}
+
 const stared = ref(false);
 isStared(toRaw(props.blog.id)).then((r) => (stared.value = r));
 
-function handleStar(id: number) {
+function handleStar() {
   stared.value = !stared.value;
-  star(id, stared.value);
+  star(props.blog.id, stared.value);
   ElMessage({
     message: `已${stared.value ? "" : "取消"}收藏`,
     type: "success",
   });
   props.afterFn.star();
 }
-
-function handleDelete(id: number) {
-  deleteSingle(id);
-  ElMessage({
-    message: "已删除",
-    type: "success",
-  });
-  props.afterFn.del();
-}
 </script>
 
 <template>
-  <el-card class="list-view" shadow="hover">
-    <p>{{ blog.text }}</p>
-    <MediaPile :videos="blog.videos" :images="blog.images" />
+  <el-card class="list-view-e" shadow="hover">
+    <template #header>
+      <el-text>@{{ blog.author }}</el-text>
+      <el-button class="op" text size="small" @click="handleDelete">
+        <el-icon><Delete /></el-icon>
+      </el-button>
+      <el-button class="op" text size="small" @click="handleAlter">
+        <el-icon><EditPen /></el-icon>
+      </el-button>
+    </template>
+
+    <p v-for="p in blog.text.split('\n')">{{ p }}</p>
+    <video
+      v-for="v of blog.videos"
+      :src="bufferReader(v, 'video/mp4')"
+      controls
+    ></video>
+    <img v-for="i of blog.images" :src="bufferReader(i, 'image/jpeg')" alt="" />
 
     <template #footer>
       <el-text type="info">
+        最后编辑于
         {{
           new Date(blog.date.getTime() + 8 * 60 * 60 * 1000)
             .toISOString()
@@ -53,19 +82,10 @@ function handleDelete(id: number) {
 
       <el-button
         class="op"
-        type="danger"
-        text
-        size="small"
-        @click="handleDelete(blog.id)"
-      >
-        <el-icon><Delete /></el-icon>
-      </el-button>
-      <el-button
-        class="op"
         type="warning"
         text
         size="small"
-        @click="handleStar(blog.id)"
+        @click="handleStar"
       >
         <el-icon><component :is="stared ? 'StarFilled' : 'Star'" /></el-icon>
       </el-button>
@@ -76,8 +96,11 @@ function handleDelete(id: number) {
 <style scoped>
 video,
 img {
-  margin: 1rem 0;
   width: 100%;
+
+  &:first-of-type {
+    margin-top: 1rem;
+  }
 }
 
 .op {

@@ -1,3 +1,5 @@
+import { ElMessageBox } from "element-plus";
+
 /**
  * 阻塞指定时长。
  */
@@ -20,4 +22,19 @@ export async function hash(...objs: any[]) {
     .join("");
 
   return hashHex;
+}
+
+/**
+ * 生成一个警告式的模态对话框。
+ */
+export function warning(content: string, doName: string, doAction: Function) {
+  ElMessageBox.confirm(content, "警告", {
+    confirmButtonText: doName,
+    cancelButtonText: "手滑了",
+    center: true,
+    showClose: false,
+    closeOnClickModal: false,
+  })
+    .then(() => doAction())
+    .catch(() => {});
 }

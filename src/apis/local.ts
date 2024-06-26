@@ -2,7 +2,7 @@ import { globalConfig } from "@/config";
 import type { Blog } from "@/types/Blog";
 
 export namespace LocalDataSource {
-  const dbName = "local-zone";
+  const dbName = globalConfig.name.en;
   const stores = ["blogs", "stars"];
   let db: IDBDatabase;
 
@@ -101,6 +101,14 @@ export namespace LocalDataSource {
 
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(false);
+    });
+  }
+
+  export async function clear() {
+    return new Promise<boolean>((resolve) => {
+      const using = use();
+      for (const s of stores) using.objectStore(s).clear();
+      resolve(true);
     });
   }
 }

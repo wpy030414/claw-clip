@@ -2,7 +2,7 @@ import { globalConfig } from "@/config";
 import type { Blog } from "@/types/Blog";
 
 export namespace RemoteDataSource {
-  async function request(subpath: string, data: any) {
+  async function request(subpath: string, data?: any) {
     return await (
       await fetch(`${globalConfig.dataSource.addr}/${subpath}`, {
         method: "POST",
@@ -10,7 +10,7 @@ export namespace RemoteDataSource {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
+        body: data ? JSON.stringify(data) : "{}",
       })
     ).json();
   }
@@ -40,5 +40,9 @@ export namespace RemoteDataSource {
 
   export async function star(id: number, enable: boolean) {
     return (await request("star", { id, enable })) as boolean;
+  }
+
+  export async function clear() {
+    return (await request("clear")) as boolean;
   }
 }

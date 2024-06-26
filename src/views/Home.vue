@@ -3,12 +3,10 @@ import BlogCard from "@/components/BlogCard.vue";
 import { ref, watch } from "vue";
 import type { Blog } from "@/types/Blog";
 import { download } from "@/apis/datasource";
-import { sleep } from "@/utils";
 
 const props = defineProps<{
   sourceGetter?: Function;
   attached?: any;
-  noDelay?: boolean;
 }>();
 
 const total = ref(0);
@@ -16,18 +14,15 @@ const blogs = ref<Blog[]>([]);
 
 const isLoading = ref(true);
 
-const pageSize = ref(3);
+const pageSize = ref(10);
 const page = ref(1);
 
 function sync() {
   isLoading.value = true;
   const fn = props.sourceGetter || download;
-  Promise.all([
-    fn(pageSize.value, page.value - 1, props.attached),
-    sleep(props.noDelay ? 0 : 250),
-  ]).then((data) => {
-    total.value = data[0].total;
-    blogs.value = data[0].blogs;
+  fn(pageSize.value, page.value - 1, props.attached).then((data: any) => {
+    total.value = data.total;
+    blogs.value = data.blogs;
     isLoading.value = false;
   });
 }
@@ -36,7 +31,7 @@ watch([props, page], sync, { immediate: true });
 </script>
 
 <template>
-  <el-skeleton v-if="isLoading && !noDelay" :rows="5" animated />
+  <el-skeleton v-if="isLoading" :rows="5" animated />
 
   <template v-else>
     <el-empty v-if="!total" description="空空如也" />
@@ -52,7 +47,7 @@ watch([props, page], sync, { immediate: true });
     />
 
     <el-pagination
-      v-if="total"
+      v-if="total > pageSize"
       class="pager"
       layout="prev, pager, next"
       :total="total"

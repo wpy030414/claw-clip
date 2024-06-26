@@ -5,7 +5,8 @@
     "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
-.list-view {
+.list-view > *,
+.list-view-e {
   margin-bottom: 1.2rem;
 
   &:last-of-type {

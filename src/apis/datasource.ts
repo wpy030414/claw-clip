@@ -76,3 +76,11 @@ export async function star(id: number, enable: boolean): Promise<boolean> {
   const fn = l ? LocalDataSource.star : RemoteDataSource.star;
   return fn(id, enable);
 }
+
+/**
+ * 删除全部数据。
+ */
+export async function clear(): Promise<boolean> {
+  const fn = l ? LocalDataSource.clear : RemoteDataSource.clear;
+  return fn();
+}

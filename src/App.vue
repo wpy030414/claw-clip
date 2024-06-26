@@ -1,24 +1,19 @@
 <script setup lang="ts">
 import TiTleBar from "@/components/TitleBar.vue";
-import NaviBar from "@/components/NaviBar.vue";
 import { useAchievementStore } from "@/stores/achievement";
 import { useThemeStore } from "@/stores/theme";
 import { useEditedStore } from "@/stores/edited";
 import { useSearchedStore } from "@/stores/searched";
-import { ElMessageBox } from "element-plus";
 import { getName, goHome, isMainView } from "@/router";
 import { onMounted } from "vue";
+import { warning } from "@/utils";
 
 useThemeStore();
 const store = useEditedStore();
 
 function handleQuitEditing() {
   if (!store.isCurrentBlank())
-    ElMessageBox.confirm("你将会丢失正在编辑的内容", "警告", {
-      confirmButtonText: "丢弃",
-      cancelButtonText: "手滑了",
-      type: "warning",
-    }).then(() => {
+    warning("你将会丢失正在编辑的内容！", "丢弃", () => {
       store.setCurrentBlank();
       goHome();
     });
@@ -82,27 +77,39 @@ onMounted(() => {
       <RouterView />
     </el-main>
     <el-footer v-if="isMainView()">
-      <NaviBar
-        :views="[
-          {
-            icon: 'House',
-            path: '/',
-          },
-          {
-            icon: 'Star',
-            path: '/stared',
-          },
-          {
-            icon: 'MessageBox',
-            path: '/msg',
-          },
-          {
-            icon: 'User',
-            path: '/me',
-          },
-        ]"
-        :currentView="'ss'"
-      />
+      <el-menu
+        default-active="/"
+        :index="$route.path"
+        mode="horizontal"
+        :ellipsis="false"
+        :router="true"
+      >
+        <el-menu-item
+          class="view-tag"
+          v-for="v of [
+            {
+              icon: 'House',
+              path: '/',
+            },
+            {
+              icon: 'Star',
+              path: '/stared',
+            },
+            {
+              icon: 'MessageBox',
+              path: '/msg',
+            },
+            {
+              icon: 'User',
+              path: '/me',
+            },
+          ]"
+          :index="v.path"
+        >
+          <el-icon><component :is="v.icon" /></el-icon>
+          {{ getName(v.path) }}
+        </el-menu-item>
+      </el-menu>
     </el-footer>
   </el-container>
 </template>
@@ -114,5 +121,9 @@ onMounted(() => {
   &::-webkit-scrollbar {
     width: 0px;
   }
+}
+
+.view-tag {
+  width: 25%;
 }
 </style>

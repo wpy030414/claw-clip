@@ -27,12 +27,26 @@ const router = createRouter({
     {
       path: "/msg",
       name: "信箱",
-      component: () => import("@/views/Empty.vue"),
+      component: () => import("@/views/MessageBox.vue"),
     },
     {
       path: "/me",
       name: "我的",
       component: () => import("@/views/Me.vue"),
+    },
+    {
+      path: "/redirect",
+      name: "重定向",
+      component: () => import("@/views/Redirect.vue"),
+    },
+    {
+      path: "/epsilon",
+      name: "空白",
+      component: () => import("@/views/Epsilon.vue"),
+    },
+    {
+      path: "/:pathMatch(.+)",
+      redirect: "/epsilon",
     },
   ],
 });
@@ -48,6 +62,11 @@ export function goHome() {
   router.push("/");
 }
 
+export function refresh() {
+  const { path } = router.currentRoute.value;
+  router.push(`/redirect?to=${path}`);
+}
+
 export function getName(path?: string) {
   if (!path) path = router.currentRoute.value.path;
   const name = router.getRoutes().filter((r) => r.path == path)[0]?.name;
@@ -56,7 +75,7 @@ export function getName(path?: string) {
 }
 
 export function isMainView() {
-  return ["/", "/stared", "/msg", "/me"].includes(
+  return ["/", "/stared", "/msg", "/me", "/redirect"].includes(
     router.currentRoute.value.path,
   );
 }
