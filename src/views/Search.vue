@@ -5,7 +5,11 @@ import { useSearchedStore } from "@/stores/searched";
 </script>
 
 <template>
-  <Home :sourceGetter="query" :attached="useSearchedStore().keyword" />
+  <Home
+    :sourceGetter="query"
+    :attached="useSearchedStore().keyword"
+    :noDelay="true"
+  />
 </template>
 
 <style scoped></style>

@@ -9,7 +9,7 @@ import { ElMessageBox } from "element-plus";
 import { getName, goHome, isMainView } from "@/router";
 import { onMounted } from "vue";
 
-const theme = useThemeStore();
+useThemeStore();
 const store = useEditedStore();
 
 function handleQuitEditing() {
@@ -31,7 +31,7 @@ function handleQuitSearching() {
 }
 
 onMounted(() => {
-  useAchievementStore().firstCome();
+  useAchievementStore();
   goHome();
 });
 </script>

@@ -1,3 +1,5 @@
+import { useAchievementStore } from "@/stores/achievement";
+
 export interface Blog {
   id: number;
 
@@ -31,7 +33,7 @@ export const EMPTY_BLOG = (): Blog => {
   const d = new Date();
   return {
     id: d.getTime(),
-    author: "",
+    author: useAchievementStore().you,
     text: "",
     videos: [],
     images: [],

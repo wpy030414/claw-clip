@@ -8,6 +8,6 @@ export const globalConfig = {
   enableStoringLocally: true,
 
   dataSource: {
-    addr: "http://localhost:24680/claw-clip",
+    addr: "http://localhost:24681/claw-clip",
   },
 };

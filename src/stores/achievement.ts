@@ -1,12 +1,23 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
 export const useAchievementStore = defineStore("achievement", () => {
-  function firstCome() {
-    const raw = localStorage.getItem("first-come");
-    if (raw) return;
-    localStorage.setItem("first-come", JSON.stringify(new Date().getTime()));
-  }
+  const you = ref(localStorage.getItem("you") || "Penyo");
 
-  return { firstCome };
+  watch(you, () => localStorage.setItem("you", you.value));
+
+  const firstCome = ref(
+    (() => {
+      {
+        const raw = localStorage.getItem("first-come");
+        if (raw) return new Date(JSON.parse(raw)).getTime();
+
+        const current = new Date().getTime();
+        localStorage.setItem("first-come", JSON.stringify(current));
+        return current;
+      }
+    })(),
+  );
+
+  return { you, firstCome };
 });

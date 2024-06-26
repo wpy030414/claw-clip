@@ -40,13 +40,17 @@ function handleDelete(id: number) {
   <el-card class="list-view" shadow="hover">
     <p>{{ blog.text }}</p>
     <MediaPile :videos="blog.videos" :images="blog.images" />
-    <p class="date">
-      {{
-        new Date(blog.date.getTime() + 8 * 60 * 60 * 1000)
-          .toISOString()
-          .replace("T", " ")
-          .substring(0, 19)
-      }}
+
+    <template #footer>
+      <el-text type="info">
+        {{
+          new Date(blog.date.getTime() + 8 * 60 * 60 * 1000)
+            .toISOString()
+            .replace("T", " ")
+            .substring(0, 19)
+        }}
+      </el-text>
+
       <el-button
         class="op"
         type="danger"
@@ -65,7 +69,7 @@ function handleDelete(id: number) {
       >
         <el-icon><component :is="stared ? 'StarFilled' : 'Star'" /></el-icon>
       </el-button>
-    </p>
+    </template>
   </el-card>
 </template>
 
@@ -74,11 +78,6 @@ video,
 img {
   margin: 1rem 0;
   width: 100%;
-}
-
-.date {
-  margin-top: 1rem;
-  color: lightgrey;
 }
 
 .op {
