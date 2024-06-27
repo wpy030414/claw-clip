@@ -1,4 +1,4 @@
-import { useAchievementStore } from "@/stores/achievement";
+import { useMeStore } from "@/stores/me";
 
 export interface Blog {
   id: number;
@@ -33,7 +33,7 @@ export const EMPTY_BLOG = (): Blog => {
   const d = new Date();
   return {
     id: d.getTime(),
-    author: useAchievementStore().you,
+    author: useMeStore().you,
     text: "",
     videos: [],
     images: [],

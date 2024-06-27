@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { clear, download } from "@/apis/datasource";
-import router, { refresh } from "@/router";
-import { useAchievementStore } from "@/stores/achievement";
+import { useMeStore } from "@/stores/me";
 import { useEditedStore } from "@/stores/edited";
 import { useThemeStore } from "@/stores/theme";
 import {
@@ -14,10 +13,10 @@ import { hash, warning } from "@/utils";
 import { ElMessage } from "element-plus";
 import { ref } from "vue";
 
-const aStore = useAchievementStore();
+const me = useMeStore();
 
 const token = ref("");
-hash(aStore.you, aStore.firstCome).then((s) => (token.value = s));
+hash(me.you, me.firstCome).then((s) => (token.value = s));
 
 const a = ref({} as Achievement);
 NOW().then((r) => (a.value = r));
@@ -50,7 +49,7 @@ async function handleOutput() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${aStore.you}_data.json`;
+    a.download = `backup_${me.you}.dat`;
     a.click();
 
     URL.revokeObjectURL(url);
@@ -70,7 +69,7 @@ function handleInput() {
 
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = ".json";
+  input.accept = ".dat";
 
   input.onchange = (event) => {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -120,7 +119,7 @@ function handleReset() {
     "该操作会清除本应用程序的全部数据，且之后永远无法恢复！你确定要这样做吗？",
     "重置",
     async () => {
-      if (prompt("请输入您的笔名进行二次确认：") == aStore.you) {
+      if (prompt("请输入您的笔名进行二次确认：") == me.you) {
         localStorage.clear();
         await clear();
         history.go(0);
@@ -141,13 +140,13 @@ function handleReset() {
     </template>
     <div class="table">
       <el-text>笔名</el-text>
-      <el-input v-model="aStore.you" />
+      <el-input v-model="me.you" />
       <el-text>唯一识别码</el-text>
       <el-input
         :value="token"
         type="textarea"
         disabled
-        :rows="3"
+        :rows="2"
         resize="none"
       />
     </div>

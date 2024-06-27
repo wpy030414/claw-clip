@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 
-export const useAchievementStore = defineStore("achievement", () => {
+export const useMeStore = defineStore("achievement", () => {
   const you = ref(localStorage.getItem("you") || "Penyo");
 
   watch(you, () => localStorage.setItem("you", you.value));

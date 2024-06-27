@@ -1,5 +1,5 @@
 import { download } from "@/apis/datasource";
-import { useAchievementStore } from "@/stores/achievement";
+import { useMeStore } from "@/stores/me";
 
 export interface Achievement {
   /**
@@ -25,7 +25,7 @@ export const achievementZhCn = [
 ];
 
 export function usedDays() {
-  const firstComeDate = new Date(useAchievementStore().firstCome);
+  const firstComeDate = new Date(useMeStore().firstCome);
   const delta = new Date().getTime() - firstComeDate.getTime();
   return delta / (1000.0 * 60 * 60 * 24);
 }

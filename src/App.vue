@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import TiTleBar from "@/components/TitleBar.vue";
-import { useAchievementStore } from "@/stores/achievement";
+import { useMeStore } from "@/stores/me";
 import { useThemeStore } from "@/stores/theme";
 import { useEditedStore } from "@/stores/edited";
 import { useSearchedStore } from "@/stores/searched";
@@ -21,12 +21,12 @@ function handleQuitEditing() {
 }
 
 function handleQuitSearching() {
-  useSearchedStore().clean();
+  useSearchedStore().keyword = "";
   goHome();
 }
 
 onMounted(() => {
-  useAchievementStore();
+  useMeStore();
   goHome();
 });
 </script>

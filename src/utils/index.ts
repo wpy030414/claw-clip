@@ -11,17 +11,21 @@ export function sleep(mills: number): Promise<void> {
  * 对多个对象混合散列。
  */
 export async function hash(...objs: any[]) {
-  const encoder = new TextEncoder();
-  const data = objs.map((obj) => JSON.stringify(obj));
-  const buffer = encoder.encode(data.join(","));
+  try {
+    const encoder = new TextEncoder();
+    const data = objs.map((obj) => JSON.stringify(obj));
+    const buffer = encoder.encode(data.join(","));
 
-  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+    const hashBuffer = await crypto.subtle.digest("SHA-1", buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
-  return hashHex;
+    return hashHex;
+  } catch (_) {
+    return "你的设备不受支持";
+  }
 }
 
 /**
