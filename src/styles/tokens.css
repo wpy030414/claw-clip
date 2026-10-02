@@ -1,0 +1,23 @@
+/* 设计 token：z-index 层级常量（缓解 R2 Vditor↔M3E 层级冲突）+ 响应式断点。 */
+:root {
+  /* —— z-index 层级阶梯（Vditor 全屏 900 < M3E dialog 1000 < snackbar 1100）—— */
+  --z-nav-rail: 100;
+  --z-toolbar: 200;
+  --z-fab: 300;
+  --z-drawer: 400;
+  --z-vditor-fullscreen: 900;
+  --z-m3e-dialog: 1000;
+  --z-snackbar: 1100;
+  --z-command-palette: 1200;
+
+  /* —— 响应式断点（与 hooks/useMediaQuery.ts 的 DESKTOP_QUERY 同源）—— */
+  --breakpoint-mobile: 600px;
+  --breakpoint-desktop: 900px;
+
+  /* —— 布局尺寸 —— */
+  --nav-rail-width: 80px;
+  --topbar-height: 64px;
+  --navbar-height: 64px;
+  --list-pane-width: 320px;
+  --toc-width: 260px;
+}

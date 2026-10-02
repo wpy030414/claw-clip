@@ -1,0 +1,33 @@
+/* 全局重置 + 基础排版。字体自托管在 S1 后续补 public/fonts，此处先用系统字体栈兜底。 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  font-family:
+    Roboto, Inter, "Helvetica Neue", Helvetica, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  line-height: 1.5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  /* M3E <m3e-theme> 会接管 body 背景/文字色；此处仅兜底，避免主题挂载前白闪。 */
+  background: var(--md-sys-color-background, #fff);
+  color: var(--md-sys-color-on-background, #111);
+}
+
+/* 列表项间距（对应旧 main.css 的 .list-view-e） */
+.stack > * + * {
+  margin-top: 0.75rem;
+}
