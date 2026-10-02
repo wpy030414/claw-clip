@@ -1,4 +1,4 @@
-name: Deploy Vue site to Pages
+name: Deploy React site to Pages
 
 on:
   push:
@@ -24,16 +24,25 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
+          cache: "npm"
+      - name: Install dependencies
+        # npm ci 走 lockfile 可复现；postinstall 自动拷 vditor dist 到 public/vditor（离线自托管）
+        run: npm ci
+      - name: Type check
+        run: npm run type-check
+      - name: Unit tests
+        run: npm run test:unit
       - name: Build the project
+        # build 内含 copy:vditor + tsc -b + vite build
         run: |
-          npm i
           npm run build
           cp ./dist/index.html ./dist/404.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@main
         with:
           path: ./dist
+
   deploy:
     environment:
       name: github-pages

@@ -2,7 +2,7 @@
  * useHotkeys 单测：组合键规范化 + 全局拦截。
  * 纯 window keydown 逻辑，不涉及 M3E/Vditor 渲染。
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useHotkeys, normalizeCombo } from "@/hooks/useHotkeys";
 
