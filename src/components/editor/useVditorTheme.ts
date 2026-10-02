@@ -30,9 +30,9 @@ export function syncVditorTheme(vd: Vditor, scheme: ResolvedScheme, cdnBase: str
       isDark ? "native" : "github", // codeTheme
       `${cdnBase}/dist/css/content-theme`, // contentThemePath（本地）
     );
-  } catch {
-    // 容错：部分版本 setTheme 参数不同，主题同步失败不应中断编辑
-    console.warn("[vditor-theme] setTheme 调用失败，已忽略");
+  } catch (e) {
+    // 容错：主题同步失败不应中断编辑，但打印真实错误供定位（方案 B 缺陷排查）
+    console.warn("[vditor-theme] setTheme 调用失败：", e);
   }
 }
 

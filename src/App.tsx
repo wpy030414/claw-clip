@@ -1,46 +1,98 @@
 /**
- * S1 阶段 Hello World：验证 M3E 主题 token 生效 + 明暗跟随系统。
- * 后续阶段替换为 RouterProvider + AppShell。
+ * S4 最小可运行 App：验证「新建→编辑→自动保存→刷新仍在」数据闭环。
+ * 不含完整双形态布局（S5），仅 ThemeProvider + EditorPane + 新建按钮。
  */
-import { M3eTheme, M3eButton, M3eSnackbar } from "@/components/m3e";
+import { useEffect, useState } from "react";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { EditorPane } from "@/features/editor/EditorPane";
+import { useNotesStore } from "@/stores/notesStore";
+import { M3eButton } from "@/components/m3e";
+import "@/features/editor/editor.css";
 
 export function App() {
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
+  const createNote = useNotesStore((s) => s.createNote);
+  const load = useNotesStore((s) => s.load);
+  const summaries = useNotesStore((s) => s.summaries);
+
+  // 启动：加载已有笔记（如有），自动打开第一条；否则留空
+  useEffect(() => {
+    (async () => {
+      await load({});
+      const list = useNotesStore.getState().summaries;
+      if (list.length > 0) setCurrentNoteId(list[0].id);
+    })();
+  }, [load]);
+
+  const handleCreate = async () => {
+    const id = await createNote();
+    setCurrentNoteId(id);
+  };
+
+  const handleOpenNote = (id: string) => {
+    setCurrentNoteId(id);
+  };
+
   return (
-    <M3eTheme
-      color="#FFAACC"
-      scheme="auto"
-      variant="expressive"
-      contrast="standard"
-      density={0}
-      motion="expressive"
-    >
-      <div style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <h1 style={{ color: "var(--md-sys-color-primary)" }}>
-          鲨鱼夹 | ClawClip — React 重写 S1
-        </h1>
-        <p style={{ color: "var(--md-sys-color-on-surface-variant)" }}>
-          M3E 主题已挂载。明暗跟随系统偏好。
-        </p>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <M3eButton variant="filled" onClick={() => M3eSnackbar.open("主题验证成功", "好的")}>
-            填充按钮
-          </M3eButton>
-          <M3eButton variant="outlined" onClick={() => M3eSnackbar.open(" outlined 按钮", "关闭")}>
-            描边按钮
-          </M3eButton>
-        </div>
+    <ThemeProvider>
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
         <div
           style={{
-            marginTop: "1rem",
             padding: "1rem",
+            borderBottom: "1px solid var(--md-sys-color-outline-variant)",
             background: "var(--md-sys-color-surface-container)",
-            borderRadius: "12px",
-            color: "var(--md-sys-color-on-surface)",
           }}
         >
-          此块消费 <code>--md-sys-color-*</code> token，验证方案 B 技术前提（light-DOM 可继承 M3E token）。
+          <h1 style={{ fontSize: "1.2rem", marginBottom: "0.5rem" }}>
+            S4 数据闭环验证
+          </h1>
+          <M3eButton variant="filled" onClick={handleCreate} data-testid="btn-new">
+            新建笔记
+          </M3eButton>
+          {summaries.length > 0 && (
+            <div style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+              <strong>已有笔记：</strong>
+              {summaries.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => handleOpenNote(s.id)}
+                  style={{
+                    marginLeft: "0.5rem",
+                    padding: "0.25rem 0.5rem",
+                    background: currentNoteId === s.id ? "var(--md-sys-color-primary)" : "transparent",
+                    color: currentNoteId === s.id ? "var(--md-sys-color-on-primary)" : "var(--md-sys-color-on-surface)",
+                    border: "1px solid var(--md-sys-color-outline)",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                  data-testid={`note-link-${s.id}`}
+                >
+                  {s.title} ({s.wordCount}字)
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {currentNoteId ? (
+            <EditorPane noteId={currentNoteId} />
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--md-sys-color-on-surface-variant)",
+              }}
+              data-testid="empty-state"
+            >
+              点击「新建笔记」开始
+            </div>
+          )}
         </div>
       </div>
-    </M3eTheme>
+    </ThemeProvider>
   );
 }

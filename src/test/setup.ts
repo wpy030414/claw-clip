@@ -10,13 +10,14 @@
  */
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
-import { Blob as NodeBlob } from "node:buffer";
+import { Blob as NodeBlob, File as NodeFile } from "node:buffer";
 import { afterEach, vi } from "vitest";
 import { __resetDbSingleton } from "@/data/db";
 import { releaseBlobUrls } from "@/data/blobStore";
 
-// jsdom Blob 无法 structuredClone，换 Node 原生 Blob
+// jsdom 的 Blob/File 没有 arrayBuffer()（Node 18+ 才有），换成 Node 原生实现
 (globalThis as any).Blob = NodeBlob;
+(globalThis as any).File = NodeFile;
 
 // matchMedia mock（useMediaQuery / useThemeSync 依赖）
 Object.defineProperty(window, "matchMedia", {

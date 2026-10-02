@@ -1,0 +1,90 @@
+/**
+ * 编辑器面板布局样式（EditorPane）。
+ * 颜色全部消费 M3E --md-sys-color-* token（方案 B），明暗自动跟随。
+ */
+
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+}
+
+.editor-pane--loading {
+  align-items: center;
+  justify-content: center;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* 顶栏 */
+.editor-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--topbar-height);
+  padding: 0 0.75rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container);
+}
+
+.editor-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--md-sys-color-on-surface);
+}
+
+.editor-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+  flex-shrink: 0;
+}
+
+.editor-save-state[data-testid="save-state"] {
+  min-width: 3.5em;
+  text-align: right;
+}
+
+/* 画布：Vditor 撑满剩余空间 */
+.editor-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  position: relative; /* overlay 定位锚点 */
+}
+
+/* 载入遮罩：覆盖画布但不卸载 VditorEditor 子树（见 EditorPane key={noteId} 注释） */
+.editor-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--md-sys-color-surface) 70%, transparent);
+  color: var(--md-sys-color-on-surface-variant);
+  z-index: var(--z-toolbar);
+  backdrop-filter: blur(2px);
+}
+
+.editor-canvas [data-testid="vditor-root"],
+.editor-canvas .vditor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* material-symbols 图标基线对齐 */
+.editor-topbar .material-symbols-outlined {
+  font-size: 20px;
+}

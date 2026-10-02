@@ -46,11 +46,17 @@ test("S1: M3E 主题挂载 + 按钮渲染 shadow DOM", async ({ page }) => {
   await page.screenshot({ path: "e2e/screenshots/s1-hello-world.png", fullPage: true });
 });
 
-test("S1: Snackbar 命令式 API 可用", async ({ page }) => {
+test("S1: Snackbar 命令式 API 可用（Cmd+S 保存触发）", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
 
-  await page.locator("m3e-button").first().click();
+  // 新建笔记 → 进入编辑器 → Cmd+S 保存触发 toastSuccess
+  await page.getByTestId("btn-new").click();
+  await page.waitForSelector(".vditor-ir .vditor-reset", { timeout: 15_000 });
+  await page.locator(".vditor-ir .vditor-reset").first().click();
+  await page.keyboard.type("测试内容");
+  await page.keyboard.press("Control+s"); // Cmd+S 保存
+
   await expect(page.locator("m3e-snackbar")).toBeAttached({ timeout: 3_000 });
 });
 
