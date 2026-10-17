@@ -13,7 +13,7 @@
  * 预览/导出都复用本管线的输出，保证「编辑所见 = 导出所得」。
  */
 import MarkdownIt from "markdown-it";
-import type { MarkdownIt as MarkdownItInstance } from "markdown-it";
+import type { MarkdownIt as MarkdownItInstance, Token } from "markdown-it";
 import footnote from "markdown-it-footnote";
 import taskLists from "markdown-it-task-lists";
 import deflist from "markdown-it-deflist";
@@ -74,4 +74,57 @@ export function renderMarkdown(source: string): string {
 /** 渲染单行（标题/摘要等场景）。 */
 export function renderInline(source: string): string {
   return md.renderInline(source);
+}
+
+/** 大纲条目：level=1..6，pos=标题所在行的源码字符偏移。 */
+export interface MarkdownHeading {
+  level: number;
+  text: string;
+  pos: number;
+}
+
+/**
+ * 从 Markdown 源码提取真正的标题（大纲用）。
+ *
+ * 必须走解析器而不是逐行正则：``` / ~~~ 围栏代码块、缩进代码块、HTML 块里的
+ * `# 不是标题` 都不能进入大纲；同时支持 ATX（`# 标题`）与 Setext（下划线）两种写法。
+ */
+export function extractOutline(source: string): MarkdownHeading[] {
+  const tokens = md.parse(source, {});
+  const lineStarts = [0];
+  for (let i = 0; i < source.length; i++) {
+    if (source.charCodeAt(i) === 10) lineStarts.push(i + 1);
+  }
+
+  const headings: MarkdownHeading[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type !== "heading_open") continue;
+    const inline = tokens[i + 1];
+    headings.push({
+      level: Number(token.tag.slice(1)),
+      text: inline?.type === "inline" ? inlineText(inline) : "",
+      pos: lineStarts[token.map?.[0] ?? 0] ?? 0,
+    });
+  }
+  return headings;
+}
+
+/** 标题行内 token → 纯文本（保留链接/行内代码/图片替代文本）。 */
+function inlineText(token: Token): string {
+  if (!token.children) return token.content;
+  let text = "";
+  for (const child of token.children) {
+    if (
+      child.type === "text" ||
+      child.type === "code_inline" ||
+      child.type === "image" ||
+      child.type === "math_inline"
+    ) {
+      text += child.content;
+    } else if (child.type === "softbreak" || child.type === "hardbreak") {
+      text += " ";
+    }
+  }
+  return text.trim();
 }

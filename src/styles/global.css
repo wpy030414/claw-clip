@@ -31,3 +31,9 @@ body {
 .stack > * + * {
   margin-top: 0.75rem;
 }
+
+/* M3E Snackbar 以 popover 渲染：UA 默认的 Canvas 背景会在 .base 圆角外露出白角，
+   深色模式下尤其明显。宿主本身必须透明，底色交给内部 .base。 */
+m3e-snackbar {
+  background-color: transparent;
+}

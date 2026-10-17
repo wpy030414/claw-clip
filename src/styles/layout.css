@@ -65,6 +65,9 @@ m3e-theme {
 
 .app-shell--mobile .note-list-pane {
   border-right: none;
+  /* 移动端首页整页等比放大：zoom 同时缩放字号、间距、图标与触控热区，
+     百分比宽高按缩放后的坐标系解析，不会撑出横向滚动。 */
+  zoom: 1.12;
 }
 
 .note-list-empty {
@@ -652,6 +655,8 @@ m3e-theme {
   justify-content: space-between;
   gap: 8px;
   flex-shrink: 0;
+  /* 内容区为空或高度不足时，底部 bar 仍然贴住侧栏底部 */
+  margin-top: auto;
   padding: 8px 10px 10px;
   border-top: 1px solid var(--md-sys-color-outline-variant, #cac4d0);
 }

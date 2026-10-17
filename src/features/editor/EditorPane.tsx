@@ -20,7 +20,7 @@ import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useUiStore, type OutlineItem } from "@/stores/uiStore";
+import { useUiStore } from "@/stores/uiStore";
 import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
 import { hydrateMarkdown, releaseBlobUrls, saveBlob } from "@/data/blobStore";
 import {
@@ -57,6 +57,8 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setSetting = useSettingsStore((s) => s.set);
   const setOutline = useUiStore((s) => s.setOutline);
+  const sidebarTab = useUiStore((s) => s.sidebarTab);
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const isDesktop = useIsDesktop();
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -85,17 +87,29 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     [onChange],
   );
 
-  // 大纲：从正文实时派生（文档树之外的第二页签）
+  /**
+   * 大纲：用 Markdown 解析器提取真正的标题（围栏/缩进代码块里的 `#` 不算）。
+   *
+   * - 只在桌面端、侧栏展开且停在大纲页签时计算，避免编辑态白加载 markdown-it；
+   * - 120ms 防抖，连续输入不反复解析；
+   * - 解析期间保留上一版大纲，不闪空态。
+   */
   useEffect(() => {
-    const items: OutlineItem[] = [];
-    const re = /^(#{1,6})\s+(.+?)\s*#*\s*$/gm;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(value))) {
-      items.push({ level: m[1].length, text: m[2].trim(), pos: m.index });
-    }
-    setOutline(items);
-    return () => setOutline([]);
-  }, [value, setOutline]);
+    if (!isDesktop || !sidebarOpen || sidebarTab !== "outline") return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      void import("@/utils/markdownRender").then(({ extractOutline }) => {
+        if (alive) setOutline(extractOutline(value));
+      });
+    }, 120);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [value, isDesktop, sidebarOpen, sidebarTab, setOutline]);
+
+  // 离开编辑器时清空大纲，避免下一条笔记短暂显示上一条的标题
+  useEffect(() => () => setOutline([]), [setOutline]);
 
   // 切笔记：关闭浮层并回收上一篇笔记的 object URL
   useEffect(() => {

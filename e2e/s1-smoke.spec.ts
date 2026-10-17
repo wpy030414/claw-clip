@@ -58,7 +58,12 @@ test("S1: Snackbar 命令式 API 可用（Cmd+S 保存触发）", async ({ page 
     buffer: Buffer.from("# 冒烟\n\n内容", "utf-8"),
   });
 
-  await expect(page.locator("m3e-snackbar").first()).toBeAttached({ timeout: 5_000 });
+  const snackbar = page.locator("m3e-snackbar").first();
+  await expect(snackbar).toBeAttached({ timeout: 5_000 });
+  // popover 宿主若保留 UA 的 Canvas 背景，深色模式下圆角外会露出白角
+  await expect
+    .poll(() => snackbar.evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe("rgba(0, 0, 0, 0)");
 });
 
 test("S1: 明暗模式跟随系统（scheme=auto）", async ({ page }) => {

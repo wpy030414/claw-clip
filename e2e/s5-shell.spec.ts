@@ -81,6 +81,9 @@ test("S5 移动：笔记树 → 全屏编辑器 → 返回树", async ({ page })
   await expect(page.getByTestId("sidebar-footer")).toBeVisible();
   await expect(page.getByTestId("sidebar-stats")).toContainText(/共 \d+ 个笔记/);
   await expect(page.getByTestId("btn-theme-toggle")).toBeVisible();
+  // 首页整体等比放大：zoom 同时放大字号/间距/图标，且不能撑出横向滚动
+  await expect(page.getByTestId("note-list-pane")).toHaveCSS("zoom", "1.12");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   // 移动端没有常驻编辑器：不展示大纲页签
   await expect(page.getByTestId("tab-outline")).toHaveCount(0);
   await expect(page.getByTestId("tab-docs")).toHaveCount(0);
@@ -117,13 +120,17 @@ test("侧栏：大纲页签、收起与展开", async ({ page }) => {
   await page.getByTestId("create-note").click();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
   await page.locator(EDITOR).first().click();
-  await page.keyboard.insertText("# 一级标题\n\n## 二级标题\n\n正文");
+  await page.keyboard.insertText(
+    "# 一级标题\n\n## 二级标题\n\n```md\n# 代码里的假标题\n```\n\n正文",
+  );
 
   await page.getByTestId("tab-outline").click();
   const outline = page.getByTestId("outline-pane");
   await expect(outline).toBeVisible();
+  // 代码块里的 # 不是标题：大纲只保留真正的两级标题
   await expect(outline.locator(".outline-item")).toHaveCount(2);
   await expect(outline.locator(".outline-item").first()).toHaveText("一级标题");
+  await expect(outline).not.toContainText("代码里的假标题");
 
   // 点击大纲条目 → 光标跳到对应标题（顶栏字数不变，编辑器仍聚焦）
   await outline.locator(".outline-item").nth(1).click();
@@ -150,4 +157,27 @@ test("侧栏标题：点击显示 commit hash 前七位，再点一次回到标�
   await title.click();
   await expect(title).toHaveText("ClawClip");
   await expect(title).toHaveAttribute("data-mode", "title");
+});
+
+test("S5 桌面：侧栏内容为空时底部 bar 仍贴底", async ({ page }) => {
+  await page.goto("");
+  const sidebar = page.getByTestId("app-sidebar");
+  const footer = page.getByTestId("sidebar-footer");
+  await expect(footer).toBeVisible();
+
+  const assertBottom = async () => {
+    const [f, s] = await Promise.all([footer.boundingBox(), sidebar.boundingBox()]);
+    expect(f).toBeTruthy();
+    expect(s).toBeTruthy();
+    expect(Math.abs(f!.y + f!.height - (s!.y + s!.height))).toBeLessThanOrEqual(1);
+  };
+
+  // 文档页签：没有笔记
+  await expect(page.getByTestId("note-list-empty")).toBeVisible();
+  await assertBottom();
+
+  // 大纲页签：当前没有可见文档 → 也没有标题
+  await page.getByTestId("tab-outline").click();
+  await expect(page.getByTestId("outline-empty")).toBeVisible();
+  await assertBottom();
 });

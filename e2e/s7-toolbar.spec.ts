@@ -143,6 +143,67 @@ test("导出 HTML：编辑模式下按需渲染并生成独立文档", async ({ 
   expect(html).not.toContain("prefers-color-scheme: dark");
 });
 
+test("活动行：光标所在行有可感知的浅色底（含行号列）", async ({ page }) => {
+  await newNote(page);
+  await page.keyboard.insertText("第一行\n第二行\n第三行");
+  await page.keyboard.press("Control+Home");
+  await page.keyboard.press("ArrowDown");
+
+  const info = await page.evaluate(() => {
+    const line = document.querySelector(".cm-activeLine");
+    const gutter = document.querySelector(".cm-activeLineGutter");
+    const scroller = document.querySelector(".cm-scroller");
+    const before = line ? getComputedStyle(line, "::before") : null;
+    return {
+      lineBg: before ? before.backgroundColor : null,
+      beforeLeft: before ? before.left : null,
+      beforeRight: before ? before.right : null,
+      gutterBg: gutter ? getComputedStyle(gutter).backgroundColor : null,
+      overflowX: scroller ? getComputedStyle(scroller).overflowX : null,
+    };
+  });
+
+  expect(info.lineBg).not.toBeNull();
+  expect(info.lineBg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(info.gutterBg).not.toBe("rgba(0, 0, 0, 0)");
+  // 底色向左右各延伸出内容列（贯穿整行），由 scroller 水平裁剪
+  expect(Number.parseFloat(info.beforeLeft!)).toBeLessThan(0);
+  expect(Number.parseFloat(info.beforeRight!)).toBeLessThan(0);
+  expect(info.overflowX).toBe("clip");
+});
+
+test("行号：折行时与首行对齐，而不是整块居中", async ({ page }) => {
+  await newNote(page);
+  await page.keyboard.insertText("这是一行很长很长的文字，用来测试折行时行号的位置。".repeat(6));
+  await page.waitForTimeout(300);
+
+  const result = await page.evaluate(() => {
+    const nums = Array.from(
+      document.querySelectorAll(".cm-lineNumbers .cm-gutterElement"),
+    ).filter((el) => getComputedStyle(el).visibility !== "hidden");
+    const gutter = nums[0];
+    const gutterRange = document.createRange();
+    gutterRange.selectNodeContents(gutter);
+    const gb = gutterRange.getBoundingClientRect();
+
+    const line = document.querySelector(".cm-line")!;
+    const textNode = line.firstChild!;
+    const charRange = document.createRange();
+    charRange.setStart(textNode, 0);
+    charRange.setEnd(textNode, 1);
+    const cb = charRange.getBoundingClientRect();
+
+    return {
+      wrapped: line.getBoundingClientRect().height > 40,
+      // 行号中心与首行首字中心的垂直偏差
+      delta: Math.abs((gb.top + gb.bottom) / 2 - (cb.top + cb.bottom) / 2),
+    };
+  });
+
+  expect(result.wrapped).toBe(true);
+  expect(result.delta).toBeLessThan(2);
+});
+
 test("更多菜单：格式化位于第一项并强制校准 Markdown 格式", async ({ page }) => {
   await newNote(page);
   await page.keyboard.insertText(

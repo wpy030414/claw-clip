@@ -12,6 +12,7 @@ import {
   EditorView,
   drawSelection,
   dropCursor,
+  highlightActiveLine,
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
@@ -88,7 +89,9 @@ function themeExtension(fontSize: number) {
       fontFamily:
         'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "PingFang SC", monospace',
       lineHeight: "1.75",
-      overflow: "auto",
+      // 行内折行已开启；水平裁剪用于让活动行的全宽底色不产生横向滚动条
+      overflowX: "clip",
+      overflowY: "auto",
     },
     ".cm-content": {
       padding: "28px 36px 45vh",
@@ -96,7 +99,26 @@ function themeExtension(fontSize: number) {
       maxWidth: "860px",
       margin: "0 auto",
     },
-    ".cm-activeLine": { backgroundColor: "transparent" },
+    // 光标所在行：用 M3 surface 层色贯穿整行（含行号列与两侧留白）。
+    // 正文内容有 860px 的阅读宽度上限、两侧可能是 auto margin，
+    // 直接给 .cm-line 铺底只会覆盖文本列；改用绝对定位伪元素向左右各
+    // 延伸 100vw，再由 .cm-scroller 的 overflow-x: clip 裁到可视区域。
+    ".cm-activeLine": {
+      position: "relative",
+      zIndex: "0",
+      backgroundColor: "transparent",
+    },
+    ".cm-activeLine::before": {
+      content: '""',
+      position: "absolute",
+      top: "0",
+      bottom: "0",
+      left: "-100vw",
+      right: "-100vw",
+      backgroundColor: "var(--md-sys-color-surface-container-high)",
+      zIndex: "-1",
+      pointerEvents: "none",
+    },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
       backgroundColor: "var(--md-sys-color-secondary-container)",
     },
@@ -107,19 +129,25 @@ function themeExtension(fontSize: number) {
       border: "none",
       color: "var(--md-sys-color-on-surface-variant)",
       fontSize: "0.78em",
+      // 活动行的全宽底色来自正文的伪元素；行号列必须盖在它上面
+      zIndex: "1",
     },
-    // flex 居中：gutter 元素被 CodeMirror 固定为整行高，纯文本会贴顶显得偏上
+    // 行号与「首行」对齐：gutter 元素高度 = 整块（含折行）高度，
+    // 不能用 center，否则折行时行号会飘到整块中间。
+    // 数字字号是 0.78em，把行高折算成正文行高（1.75 / 0.78），
+    // 让数字的行盒与正文首行等高，再靠 flex-start 贴顶。
     ".cm-lineNumbers .cm-gutterElement": {
       display: "flex",
-      alignItems: "center",
+      alignItems: "flex-start",
       justifyContent: "flex-end",
+      lineHeight: "2.244",
       minWidth: "34px",
       padding: "0 10px 0 14px",
       opacity: "0.65",
     },
-    // 光标所在行：深色 + 加粗 + 完全不透明，便于定位
+    // 光标所在行：深色 + 加粗 + 完全不透明，便于定位；行号列与正文同一底色
     ".cm-lineNumbers .cm-gutterElement.cm-activeLineGutter": {
-      backgroundColor: "transparent",
+      backgroundColor: "var(--md-sys-color-surface-container-high)",
       color: "var(--md-sys-color-on-surface)",
       opacity: "1",
       fontWeight: "600",
@@ -156,6 +184,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
           highlightSelectionMatches(),
           lineNumbers(),
           highlightActiveLineGutter(),
+          highlightActiveLine(),
           EditorView.lineWrapping,
           markdown(),
           syntaxHighlighting(mdHighlight),
