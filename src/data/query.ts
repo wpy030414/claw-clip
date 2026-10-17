@@ -42,6 +42,10 @@ export async function queryNotes(
     // AND 语义：需同时含所有指定标签
     notes = notes.filter((n) => filter.tags!.every((t) => n.tags.includes(t)));
   }
+  if (filter.folderId !== undefined) {
+    // 旧笔记没有 folderId → 视为根目录（null）
+    notes = notes.filter((n) => (n.folderId ?? null) === filter.folderId);
+  }
 
   // ---- 排序（title 用 localeCompare 升序，时间类降序=新在前） ----
   const sort = filter.sort ?? "updated";

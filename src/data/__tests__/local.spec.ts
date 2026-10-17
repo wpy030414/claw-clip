@@ -178,3 +178,41 @@ describe("LocalDataSource.exportAll / importAll（备份往返）", () => {
     expect(Array.from(restored)).toEqual(Array.from(bytes));
   });
 });
+
+describe("LocalDataSource 文件夹（v2）", () => {
+  it("新建 / 列出文件夹", async () => {
+    const f = await ds.upsertFolder({
+      id: "folder-1",
+      name: "工作",
+      parentId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect(f.name).toBe("工作");
+    const all = await ds.listFolders();
+    expect(all.map((x) => x.id)).toContain("folder-1");
+  });
+
+  it("删除文件夹级联删除子孙文件夹与其下笔记", async () => {
+    await ds.upsertFolder({ id: "f-root", name: "项目", parentId: null, createdAt: 1, updatedAt: 1 });
+    await ds.upsertFolder({ id: "f-child", name: "子项", parentId: "f-root", createdAt: 1, updatedAt: 1 });
+    await ds.upsertFolder({ id: "f-other", name: "无关", parentId: null, createdAt: 1, updatedAt: 1 });
+    await ds.upsertNote(makeNote({ id: "n-in", folderId: "f-child" }));
+    await ds.upsertNote(makeNote({ id: "n-out", folderId: "f-other" }));
+
+    await ds.deleteFolder("f-root");
+
+    const folders = await ds.listFolders();
+    expect(folders.map((f) => f.id)).toEqual(["f-other"]);
+    expect(await ds.getNote("n-in")).toBeUndefined();
+    expect(await ds.getNote("n-out")).toBeDefined();
+  });
+
+  it("deleteNote 不影响同文件夹的其它笔记", async () => {
+    await ds.upsertFolder({ id: "f-x", name: "X", parentId: null, createdAt: 1, updatedAt: 1 });
+    await ds.upsertNote(makeNote({ id: "a", folderId: "f-x" }));
+    await ds.upsertNote(makeNote({ id: "b", folderId: "f-x" }));
+    await ds.deleteNote("a");
+    expect(await ds.getNote("b")).toBeDefined();
+  });
+});

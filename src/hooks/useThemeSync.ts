@@ -4,7 +4,7 @@
  * 职责：
  * 1. 把 settingsStore.scheme（auto/light/dark）解析成实际明暗 resolvedScheme。
  *    auto 时监听 matchMedia('(prefers-color-scheme: dark)') 跟随系统；
- *    Vditor 主题同步需要「实际值」，而 M3E <m3e-theme scheme="auto"> 内部自己跟随，
+ *    预览代码高亮主题需要「实际值」，而 M3E <m3e-theme scheme="auto"> 内部自己跟随，
  *    不对外暴露解析结果，所以这里自己算一份。
  * 2. 在 App 顶层调用一次即可。
  */

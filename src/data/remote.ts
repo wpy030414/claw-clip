@@ -10,6 +10,7 @@
  */
 import { globalConfig } from "@/config";
 import type { Note, NoteFilter } from "@/types/note";
+import type { Folder } from "@/types/folder";
 import type { BlobRecord } from "@/types/blob";
 import type { BackupPayload } from "@/types/backup";
 import type { DataSource } from "./datasource";
@@ -39,6 +40,15 @@ export class RemoteDataSource implements DataSource {
   }
   async deleteNote(_id: string): Promise<void> {
     return notImplemented("deleteNote");
+  }
+  async listFolders(): Promise<Folder[]> {
+    return notImplemented("listFolders");
+  }
+  async upsertFolder(_folder: Folder): Promise<Folder> {
+    return notImplemented("upsertFolder");
+  }
+  async deleteFolder(_id: string): Promise<void> {
+    return notImplemented("deleteFolder");
   }
   async setStarred(_id: string, _starred: boolean): Promise<void> {
     return notImplemented("setStarred");

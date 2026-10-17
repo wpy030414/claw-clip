@@ -11,7 +11,7 @@ export const globalConfig = {
 
   /** IndexedDB 库名。v2 与旧库 "ClawClip" 物理隔离，不写迁移、不动旧数据。 */
   dbName: "claw-clip-v2",
-  dbVersion: 1,
+  dbVersion: 2,
 
   /** true=本地 IndexedDB；false=远程数据源（占位，未实现具体服务）。 */
   enableStoringLocally: true,
@@ -22,6 +22,7 @@ export const globalConfig = {
 
   storeNames: {
     notes: "notes",
+    folders: "folders",
     blobs: "blobs",
     meta: "meta",
   },

@@ -11,9 +11,9 @@ export default defineConfig({
     baseURL: BASE,
     trace: "on-first-retry",
   },
-  // dev server 由外部 npm run dev 提供；E2E 直连 24680（带 /claw-clip/ base）
+  // dev server 由外部 pnpm run dev 提供；E2E 直连 24680（带 /claw-clip/ base）
   webServer: {
-    command: "npm run dev",
+    command: "pnpm run dev",
     url: BASE,
     reuseExistingServer: true,
     timeout: 60_000,

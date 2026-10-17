@@ -23,34 +23,6 @@ describe("settingsStore.set", () => {
   });
 });
 
-describe("settingsStore.cycleEditorMode（ir → sv → wysiwyg → ir）", () => {
-  it("从 ir 循环到 sv", () => {
-    useSettingsStore.setState({ editorMode: "ir" });
-    useSettingsStore.getState().cycleEditorMode();
-    expect(useSettingsStore.getState().editorMode).toBe("sv");
-  });
-
-  it("sv → wysiwyg", () => {
-    useSettingsStore.setState({ editorMode: "sv" });
-    useSettingsStore.getState().cycleEditorMode();
-    expect(useSettingsStore.getState().editorMode).toBe("wysiwyg");
-  });
-
-  it("wysiwyg → ir（回到起点）", () => {
-    useSettingsStore.setState({ editorMode: "wysiwyg" });
-    useSettingsStore.getState().cycleEditorMode();
-    expect(useSettingsStore.getState().editorMode).toBe("ir");
-  });
-
-  it("完整循环三次回到 ir", () => {
-    useSettingsStore.setState({ editorMode: "ir" });
-    useSettingsStore.getState().cycleEditorMode();
-    useSettingsStore.getState().cycleEditorMode();
-    useSettingsStore.getState().cycleEditorMode();
-    expect(useSettingsStore.getState().editorMode).toBe("ir");
-  });
-});
-
 describe("settingsStore.toggleScheme（明暗快捷切换）", () => {
   it("auto 且当前解析为 dark → 强制 light", () => {
     useSettingsStore.setState({ scheme: "auto", resolvedScheme: "dark" });

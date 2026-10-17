@@ -9,6 +9,7 @@ import { globalConfig } from "@/config";
 import type { BackupPayload } from "@/types/backup";
 import type { BlobRecord } from "@/types/blob";
 import type { Note, NoteFilter } from "@/types/note";
+import type { Folder } from "@/types/folder";
 import { LocalDataSource } from "./local";
 import { RemoteDataSource } from "./remote";
 import type { QueryResult } from "./query";
@@ -28,6 +29,14 @@ export interface DataSource {
   ): Promise<QueryResult>;
   /** 删除笔记（级联删除其全部附件 blob）。 */
   deleteNote(id: string): Promise<void>;
+
+  // —— 文件夹树（v2）——
+  /** 全部文件夹（无序，由 UI 组树）。 */
+  listFolders(): Promise<Folder[]>;
+  /** 新增或更新文件夹。 */
+  upsertFolder(folder: Folder): Promise<Folder>;
+  /** 删除文件夹：级联删除子孙文件夹及其下全部笔记与附件。 */
+  deleteFolder(id: string): Promise<void>;
   /** 设置收藏（starred 为 Note 内联字段）。 */
   setStarred(id: string, starred: boolean): Promise<void>;
   /** 切换收藏，返回切换后的值。 */

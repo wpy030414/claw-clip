@@ -20,7 +20,7 @@
 
 ---
 
-## ADR-002 · 编辑器选 Vditor（IR 模式），不用 Tiptap/Milkdown/CodeMirror ✅
+## ADR-002 · 编辑器选 Vditor（IR 模式），不用 Tiptap/Milkdown/CodeMirror ❌【已被 ADR-016 取代】
 
 **背景**：Typora 的招牌是**即时渲染 IR**——光标不在的行渲染成富文本，光标进入某行才显出 `**`/`#` 原始标记。这是「对齐 Typora」的核心诉求。
 
@@ -180,7 +180,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 
 ---
 
-## ADR-012 · 路由用 react-router v7 data router，双形态共享单一路由 🔄
+## ADR-012 · 路由用 react-router v7 data router，双形态共享单一路由 ✅
 
 **背景**：vue-router → react-router 7。响应式双形态（桌面工作台/移动卡片流）。
 
@@ -232,4 +232,60 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 
 ---
 
-_（后续 ADR 随 S5-S10 推进补充：双形态布局细节、命令面板、导入导出、CI/部署、快照整理策略等。）_
+## ADR-016 · 移除 Vditor，改用 CodeMirror 6 源码编辑 + 独立预览 ✅
+
+**背景**：Vditor 的 IR 模式虽然还原 Typora 手感，但带来三重负担：包体大（首屏 ~1.4MB）、命令式生命周期坑多（ADR-007/008/009/015 全在填它的坑）、与「文件夹 + 导入导出 + 可配置印刷预览」的新方向耦合过重。
+
+**决策**：
+- 编辑内核换 **CodeMirror 6**（`@codemirror/lang-markdown` + 自定义 HighlightStyle，颜色走 M3E token）。
+- 放弃「即时渲染 IR」，改为**编辑/预览双视图**：源码编辑，预览由独立 markdown-it 管线渲染。
+- 渲染管线（markdown-it / KaTeX / highlight.js）**按需动态 import**，不进入首屏；Mermaid 进一步按图类型拆分懒加载。
+
+**实测约束**：
+- **编辑器必须半受控**：`value` 只作为挂载初始文档，父级 state 不回流到 `EditorView`。回流会打断 CJK 组合输入，产生字符乱序（Playwright 可稳定复现）。
+- 切换笔记用 `key={noteId}` 重挂载，而不是 dispatch 替换文档。
+- Playwright `keyboard.type` 输入中文会乱序（CM6 组合输入模拟问题），E2E 统一用 `keyboard.insertText`。
+
+**代价**：失去 IR 的「边写边排版」体验；换来更小的首屏、可控的渲染语义，以及预览/打印完全同源。
+
+---
+
+## ADR-017 · 文件夹树数据模型：独立 folders store + notes.folderId ✅
+
+**决策**：
+- `folders` 独立 object store（`id/name/parentId/timestamps`），扁平存储，UI 递归组树。
+- `notes.folderId?: string | null`；`null`/缺失 = 根目录。旧笔记升级后自然落入根目录，无需迁移脚本。
+- 删除文件夹为**级联删除**（子孙文件夹 + 其下笔记 + 附件），UI 二次确认。
+- 列表筛选把 `folderId` 并入 `NoteFilter`，与 keyword/starred/tags 组合。
+
+**为什么不用嵌套 JSON 树**：IndexedDB 查询/增量更新/单文件夹重命名都更简单；树深很浅，递归组树成本可忽略。
+
+---
+
+## ADR-018 · 预览 / 打印 / DOCX 导出共用同一份渲染结果 ✅
+
+**决策**：
+- 一份 `renderMarkdown()`（markdown-it + 扩展插件 + highlight.js）输出 HTML。
+- 预览区与隐藏的 `#print-root` 共用同一 HTML；`@media print` 只显示打印根，用户通过系统「另存为 PDF」导出。
+- DOCX 导出把同一 HTML 交给 DOMParser → `docx` 库，避免「预览一种排版、导出另一种排版」。
+
+**理由**：印刷类产品最怕「看到的和导出的不一样」。同源渲染把差异收敛到 CSS，用户改预览主题 CSS 即可同时影响打印。
+
+**安全**：markdown-it `html:false`，正文原始 HTML 一律转义；自定义 CSS 只注入本机应用，不接受远程内容。
+
+---
+
+## ADR-019 · PDF 回导采用 pdf.js 文本流 + 启发式重建 ✅（已知限制）
+
+**决策**：`pdfjs-dist` 抽取文本项，按 y 坐标聚行、按字号中位数识别标题层级、按行距分段、识别项目符号；输出可继续编辑的 Markdown。
+
+**理由与边界**：
+- PDF 是排版产物，没有语义结构；任何方案都无法「真正还原」表格/图片/双栏。
+- 目标定为**可编辑**而非可用版式；PRD 明确列为非目标（不保证保真）。
+- 重型依赖动态 import，避免为低频功能拖慢首屏。
+
+**后果**：扫描版 PDF（无文本层）导入为空；需要在 UI 上给出「PDF 导入仅还原文字」的预期。
+
+---
+
+_（后续 ADR 随 S10 验收与性能优化补充：体积预算、命令面板、设置页等。）_

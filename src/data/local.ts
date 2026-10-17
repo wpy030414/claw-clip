@@ -10,6 +10,7 @@
  */
 import { globalConfig } from "@/config";
 import type { Note, NoteFilter } from "@/types/note";
+import type { Folder } from "@/types/folder";
 import type { BlobRecord } from "@/types/blob";
 import type { BackupBlob, BackupPayload } from "@/types/backup";
 import { idbReq } from "@/utils/idb";
@@ -21,6 +22,7 @@ import type { DataSource } from "./datasource";
 
 const notesStore = globalConfig.storeNames.notes;
 const blobsStore = globalConfig.storeNames.blobs;
+const foldersStore = globalConfig.storeNames.folders;
 
 export class LocalDataSource implements DataSource {
   /** ★ put = 原地 upsert：同 id 覆盖更新，新 id 插入；永不改 id。返回落库后的 Note。 */
@@ -79,8 +81,48 @@ export class LocalDataSource implements DataSource {
     return getBlob(id);
   }
 
+  // —— 文件夹 ——
+
+  async listFolders(): Promise<Folder[]> {
+    const all = await getAllOf<Folder>(foldersStore);
+    return all.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async upsertFolder(folder: Folder): Promise<Folder> {
+    const next: Folder = { ...folder, updatedAt: Date.now() };
+    await withTx(foldersStore, "readwrite", (tx) =>
+      idbReq(tx.objectStore(foldersStore).put(next)),
+    );
+    return next;
+  }
+
+  /** 级联删除：先收集子孙文件夹，再删其中笔记（含附件），最后删文件夹记录。 */
+  async deleteFolder(id: string): Promise<void> {
+    const allFolders = await getAllOf<Folder>(foldersStore);
+    const doomed = new Set<string>([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const f of allFolders) {
+        if (f.parentId && doomed.has(f.parentId) && !doomed.has(f.id)) {
+          doomed.add(f.id);
+          grew = true;
+        }
+      }
+    }
+    const allNotes = await getAllOf<Note>(notesStore);
+    for (const n of allNotes) {
+      if (n.folderId && doomed.has(n.folderId)) await this.deleteNote(n.id);
+    }
+    await withTx(foldersStore, "readwrite", (tx) => {
+      const store = tx.objectStore(foldersStore);
+      for (const fid of doomed) store.delete(fid);
+    });
+  }
+
   async exportAll(): Promise<BackupPayload> {
     const notes = await getAllOf<Note>(notesStore);
+    const folders = await getAllOf<Folder>(foldersStore);
     const blobs = await getAllOf<BlobRecord>(blobsStore);
 
     // blob 二进制 → base64（JSON 无法承载二进制）
@@ -98,6 +140,7 @@ export class LocalDataSource implements DataSource {
       schemaVersion: 2,
       exportedAt: Date.now(),
       notes,
+      folders,
       blobs: backupBlobs,
     };
   }
@@ -113,11 +156,17 @@ export class LocalDataSource implements DataSource {
       createdAt: Date.now(),
     }));
 
-    // notes + blobs 分两个事务写入（各自 store）
+    // notes + folders + blobs 分事务写入（各自 store）
     await withTx(notesStore, "readwrite", (tx) => {
       const store = tx.objectStore(notesStore);
       for (const note of payload.notes) store.put(note);
     });
+    if (payload.folders?.length) {
+      await withTx(foldersStore, "readwrite", (tx) => {
+        const store = tx.objectStore(foldersStore);
+        for (const folder of payload.folders!) store.put(folder);
+      });
+    }
     await withTx(blobsStore, "readwrite", (tx) => {
       const store = tx.objectStore(blobsStore);
       for (const rec of blobRecords) store.put(rec);
@@ -126,10 +175,11 @@ export class LocalDataSource implements DataSource {
     return { notes: payload.notes.length, blobs: blobRecords.length };
   }
 
-  /** 清空 notes + blobs（meta 保留）。危险操作，UI 层须二次确认。 */
+  /** 清空 notes + folders + blobs（meta 保留）。危险操作，UI 层须二次确认。 */
   async clear(): Promise<void> {
-    await withTx([notesStore, blobsStore], "readwrite", (tx) => {
+    await withTx([notesStore, foldersStore, blobsStore], "readwrite", (tx) => {
       tx.objectStore(notesStore).clear();
+      tx.objectStore(foldersStore).clear();
       tx.objectStore(blobsStore).clear();
     });
   }

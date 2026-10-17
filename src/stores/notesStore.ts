@@ -18,11 +18,28 @@ import { globalConfig } from "@/config";
 import { datasource } from "@/data/datasource";
 import { emptyNote, toSummary } from "@/types/note";
 import type { Note, NoteFilter, NoteSummary } from "@/types/note";
+import { emptyFolder } from "@/types/folder";
+import type { Folder } from "@/types/folder";
 import type { BackupPayload } from "@/types/backup";
 import { countWords, deriveTitle, makeExcerpt } from "@/utils/markdown";
 
 /** 与 blobStore 的 BLOB_REF_RE 同源：提取正文中所有附件引用 id。 */
 const BLOB_REF_RE = /clawclip:\/\/blob\/([\w-]+)/g;
+
+/**
+ * 已打开笔记的内存缓存（id → Note）。
+ *
+ * 作用：布局切换/来回切笔记时，openNote 优先读内存最新内容，避免
+ * 「卸载时异步 flush 尚未落库 → 新实例读 IDB 读到旧值」的竞态丢字。
+ * 刷新页面后缓存为空，仍从 IndexedDB 读。
+ */
+const noteCache = new Map<string, Note>();
+
+/**
+ * 列表请求序号：过滤条件快速切换时，先发出的查询可能后返回。
+ * 只允许最新一次请求写回 summaries，避免旧结果覆盖新筛选。
+ */
+let loadSeq = 0;
 
 function extractAttachmentIds(content: string): string[] {
   const ids = new Set<string>();
@@ -36,6 +53,8 @@ interface NotesState {
   loading: boolean;
   activeNoteId: string | null;
   activeNote: Note | null;
+  /** 文件夹树（扁平存储，UI 组树）。 */
+  folders: Folder[];
 
   /** 加载列表（page=0 替换，page>0 追加，供无限滚动）。 */
   load: (filter: NoteFilter, page?: number) => Promise<void>;
@@ -43,8 +62,8 @@ interface NotesState {
   openNote: (id: string) => Promise<void>;
   /** 关闭当前编辑态。 */
   closeNote: () => void;
-  /** 新建空笔记并落库，返回新 id。 */
-  createNote: () => Promise<string>;
+  /** 新建空笔记并落库（folderId 指定归属文件夹），返回新 id。 */
+  createNote: (folderId?: string | null) => Promise<string>;
   /** 保存当前活动笔记（乐观更新 + 重算派生字段 + 落库）。 */
   saveActive: (patch: Partial<Note>) => Promise<void>;
   /** 切换收藏（乐观）。 */
@@ -57,6 +76,12 @@ interface NotesState {
   exportBackup: () => Promise<BackupPayload>;
   /** 清空全部数据。 */
   reset: () => Promise<void>;
+
+  // —— 文件夹 ——
+  loadFolders: () => Promise<void>;
+  createFolder: (name: string, parentId?: string | null) => Promise<string>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  removeFolder: (id: string) => Promise<void>;
 }
 
 export const useNotesStore = create<NotesState>()((set, get) => ({
@@ -65,8 +90,10 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
   loading: false,
   activeNoteId: null,
   activeNote: null,
+  folders: [],
 
   async load(filter, page = 0) {
+    const seq = ++loadSeq;
     set({ loading: true });
     try {
       const { total, items } = await datasource.listNotes(
@@ -74,19 +101,26 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
         globalConfig.pageSize,
         page * globalConfig.pageSize,
       );
+      if (seq !== loadSeq) return; // 过期响应：过滤条件已变化，丢弃
       set({
         summaries: page === 0 ? items : [...get().summaries, ...items],
         total,
         loading: false,
       });
     } catch {
-      set({ loading: false });
+      if (seq === loadSeq) set({ loading: false });
     }
   },
 
   async openNote(id) {
+    const cached = noteCache.get(id);
+    if (cached) {
+      set({ activeNoteId: id, activeNote: cached });
+      return;
+    }
     const note = await datasource.getNote(id);
     if (!note) return;
+    noteCache.set(id, note);
     // content 保持 clawclip:// 真相源形式，hydrate 交给编辑器桥接层（S4）
     set({ activeNoteId: id, activeNote: note });
   },
@@ -95,9 +129,10 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
     set({ activeNoteId: null, activeNote: null });
   },
 
-  async createNote() {
-    const note = emptyNote();
+  async createNote(folderId = null) {
+    const note = emptyNote(Date.now(), folderId);
     await datasource.upsertNote(note);
+    noteCache.set(note.id, note);
     set({
       summaries: [toSummary(note), ...get().summaries],
       total: get().total + 1,
@@ -126,6 +161,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
       summaries: get().summaries.map((s) => (s.id === next.id ? toSummary(next) : s)),
     });
 
+    noteCache.set(next.id, next);
     // 落库
     await datasource.upsertNote(next);
   },
@@ -146,6 +182,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
   },
 
   async remove(id) {
+    noteCache.delete(id);
     const removed = get().summaries.find((s) => s.id === id);
     // 乐观：先从列表移除
     set({
@@ -163,7 +200,9 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
 
   async importBackup(payload) {
     await datasource.importAll(payload);
-    // 导入后重载列表
+    noteCache.clear();
+    // 导入后重载文件夹与列表
+    await get().loadFolders();
     await get().load({});
   },
 
@@ -173,6 +212,62 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
 
   async reset() {
     await datasource.clear();
-    set({ summaries: [], total: 0, activeNoteId: null, activeNote: null });
+    noteCache.clear();
+    set({ summaries: [], total: 0, activeNoteId: null, activeNote: null, folders: [] });
+  },
+
+  // —— 文件夹 ——
+
+  async loadFolders() {
+    const folders = await datasource.listFolders();
+    set({ folders });
+  },
+
+  async createFolder(name, parentId = null) {
+    const folder = await datasource.upsertFolder(emptyFolder(name, parentId));
+    set({ folders: [...get().folders, folder].sort((a, b) => a.name.localeCompare(b.name)) });
+    return folder.id;
+  },
+
+  async renameFolder(id, name) {
+    const folder = get().folders.find((f) => f.id === id);
+    if (!folder) return;
+    const next = await datasource.upsertFolder({ ...folder, name: name.trim() || folder.name });
+    set({ folders: get().folders.map((f) => (f.id === id ? next : f)) });
+  },
+
+  async removeFolder(id) {
+    // 收集子孙文件夹 id（与数据层级联语义保持一致，用于同步内存态）
+    const all = get().folders;
+    const doomed = new Set<string>([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const f of all) {
+        if (f.parentId && doomed.has(f.parentId) && !doomed.has(f.id)) {
+          doomed.add(f.id);
+          grew = true;
+        }
+      }
+    }
+    await datasource.deleteFolder(id);
+
+    const removedNoteIds = get()
+      .summaries.filter((s) => s.folderId && doomed.has(s.folderId))
+      .map((s) => s.id);
+    for (const nid of removedNoteIds) noteCache.delete(nid);
+
+    set({
+      folders: all.filter((f) => !doomed.has(f.id)),
+      summaries: get().summaries.filter((s) => !(s.folderId && doomed.has(s.folderId))),
+      activeNote:
+        get().activeNote?.folderId && doomed.has(get().activeNote!.folderId!)
+          ? null
+          : get().activeNote,
+      activeNoteId:
+        get().activeNote?.folderId && doomed.has(get().activeNote!.folderId!)
+          ? null
+          : get().activeNoteId,
+    });
   },
 }));

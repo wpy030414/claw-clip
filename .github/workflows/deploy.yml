@@ -21,22 +21,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: "npm"
+          cache: "pnpm"
       - name: Install dependencies
-        # npm ci 走 lockfile 可复现；postinstall 自动拷 vditor dist 到 public/vditor（离线自托管）
-        run: npm ci
+        # frozen-lockfile 走 pnpm-lock.yaml 可复现
+        run: pnpm install --frozen-lockfile
       - name: Type check
-        run: npm run type-check
+        run: pnpm run type-check
       - name: Unit tests
-        run: npm run test:unit
+        run: pnpm run test:unit
       - name: Build the project
-        # build 内含 copy:vditor + tsc -b + vite build
+        # build 内含 tsc -b + vite build
         run: |
-          npm run build
+          pnpm run build
           cp ./dist/index.html ./dist/404.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@main

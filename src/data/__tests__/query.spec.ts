@@ -144,3 +144,21 @@ describe("queryNotes 投影（NoteSummary 不含 content）", () => {
     expect(item.wordCount).toBeDefined();
   });
 });
+
+describe("queryNotes 文件夹过滤", () => {
+  it("folderId 精确匹配；undefined=全部；null=根目录", async () => {
+    await ds.upsertNote(makeNote({ id: "f1", title: "文件夹内笔记", folderId: "folder-a" }));
+    await ds.upsertNote(makeNote({ id: "root-1", title: "根目录笔记", folderId: null }));
+
+    const inFolder = await queryNotes({ folderId: "folder-a" }, 100, 0);
+    expect(inFolder.items.map((i) => i.id)).toEqual(["f1"]);
+
+    const rootOnly = await queryNotes({ folderId: null }, 100, 0);
+    // seed 的 5 条旧笔记没有 folderId → 视为根目录
+    expect(rootOnly.total).toBe(6);
+    expect(rootOnly.items.map((i) => i.id)).not.toContain("f1");
+
+    const all = await queryNotes({}, 100, 0);
+    expect(all.total).toBe(7);
+  });
+});

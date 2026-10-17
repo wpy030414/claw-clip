@@ -1,7 +1,7 @@
 # 架构文档（ARCHITECTURE）
 
-> 鲨鱼夹 ClawClip —— 本地优先的 Typora 级 Markdown 记事本。
-> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ Vditor（IR 编辑器）+ Zustand + IndexedDB。
+> 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、可配置印刷主题、MD/DOCX/PDF 互导。
+> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（渲染）+ Zustand + IndexedDB。
 >
 > 关键决策的「为什么」见 [DECISIONS.md](./DECISIONS.md)；本文件讲「是什么、怎么连」。
 
@@ -9,21 +9,21 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  pages/         路由薄壳（NotesPage/StarredPage/SearchPage…）  │  ← react-router data router
+│  pages/         路由薄壳（Notes/Starred/Search/Editor…）      │  ← react-router data router
 ├─────────────────────────────────────────────────────────────┤
 │  layouts/       响应式双形态外壳（AppShell→Desktop/Mobile）    │  ← 断点分派，只组合不写业务
 ├─────────────────────────────────────────────────────────────┤
-│  features/      业务域（notes/editor/search/tags/settings）   │  ← 各自处理双形态表现分叉
+│  features/      业务域（notes/folders/editor/preview）        │  ← 各自处理双形态表现分叉
 ├─────────────────────────────────────────────────────────────┤
-│  components/    展示原子 + M3E 薄封装 + VditorEditor★          │  ← 无业务；editor 是命令式封装
+│  components/    展示原子 + M3E 薄封装 + MarkdownEditor★       │  ← 无业务；编辑器是命令式封装
 ├─────────────────────────────────────────────────────────────┤
-│  hooks/         业务逻辑（useNoteEditor/useNotes/useHotkeys…） │  ← 双形态共享；编排 store
+│  hooks/         业务逻辑（useMarkdownSession/useRenderedMarkdown）│ ← 双形态共享；编排 store
 ├─────────────────────────────────────────────────────────────┤
 │  stores/        Zustand（notes/settings/ui）                  │  ← 状态真相源；notesStore 唯一碰 datasource
 ├─────────────────────────────────────────────────────────────┤
-│  data/          数据访问层（datasource 门面→local/remote）     │  ← 纯 TS 零 React，可单测
+│  data/          数据访问层（datasource→local/remote）+ exchange│ ← 纯 TS 零 React，可单测
 ├─────────────────────────────────────────────────────────────┤
-│  IndexedDB (claw-clip-v2)   notes / blobs / meta              │  ← 本地持久化
+│  IndexedDB (claw-clip-v2)  notes / folders / blobs / meta     │  ← 本地持久化
 └─────────────────────────────────────────────────────────────┘
    types/  utils/  config.ts  styles/  横跨各层
 ```
@@ -32,32 +32,52 @@
 
 ## 2. 数据流
 
-### 写入（编辑 → 落库）
+### 编辑 → 落库
 ```
-用户输入 → Vditor input 回调
-  → useNoteEditor.handleChange(渲染态 content，含 blob: URL)
-  → throttle(leading+trailing) → notesStore.saveActive
-  → dehydrateMarkdown(blob: → clawclip://) 转存储态
-  → datasource.upsertNote → IndexedDB put（原地更新，不改 id）
-```
-
-### 读取（打开笔记 → 渲染）
-```
-notesStore.openNote(id) → datasource.getNote（存储态，clawclip://）
-  → useNoteEditor: hydrateMarkdown(clawclip:// → blob: object URL) 转渲染态
-  → VditorEditor.initialValue → Vditor.setValue 显示
+用户输入 → CodeMirror 6 updateListener（docChanged）
+  → useMarkdownSession.onChange
+  → throttle(leading+trailing, 600ms) → notesStore.saveActive
+  → 重算派生字段（title/wordCount/excerpt/attachmentIds）
+  → noteCache 同步更新（内存真相源）→ datasource.upsertNote → IndexedDB put（原地更新，不改 id）
 ```
 
-### 附件（粘贴图片）
+### 打开 → 编辑
 ```
-Vditor upload.handler(files)
+notesStore.openNote(id)
+  → 优先读内存 noteCache（避免「卸载 flush 未落库 → 新实例读 IDB 旧值」竞态）
+  → 未命中再读 IndexedDB
+  → EditorPane 以 key={noteId} 挂载 MarkdownEditor，value 只作为初始文档
+```
+
+**编辑器是半受控的**：文档真相源在 `EditorView` 内，父级 `value` 只用于挂载/切换文档。
+不做 value→doc 回流——实测回流会打断 CJK 组合输入，导致字符乱序（见 ADR-016）。
+
+### 附件
+```
+选择文件 / 粘贴 / 拖入
   → saveBlob(noteId, file) → IndexedDB blobs 表 → blobId
-  → resolveBlobUrl(blobId) → object URL（登记 url→id 反向映射）
-  → 返回 ![](object URL) → vd.insertValue 插入正文（当场可渲染）
-  → rAF 后 getValue → onChange → saveActive → dehydrate 存 clawclip://
+  → 在光标处插入 ![name](clawclip://blob/<id>)
+  → 正文（存储态）始终保存 clawclip:// 引用，永不落 blob: URL
 ```
 
-**content 双形态**（关键）：`activeNote.content` 与 IndexedDB 里永远是**存储态** `clawclip://blob/<id>`；只有喂给 Vditor 显示时才是**渲染态** object URL。转换集中在 `useNoteEditor` 桥接层 + `blobStore` 的 hydrate/dehydrate。
+### 预览 / 打印
+```
+Markdown 源码 → hydrateMarkdown(clawclip:// → object URL)
+  → markdown-it（html:false + GFM/脚注/定义列表/上下标/高亮/KaTeX + highlight.js）
+  → HTML → 预览区 / 打印根（#print-root）
+```
+预览与打印**共用同一份 HTML**，因此「预览所见 = 打印所得」；打印根在屏幕上移出视口，
+`@media print` 时占据整页，用户通过系统「另存为 PDF」完成 PDF 导出。
+
+### 导入 / 导出
+```
+导出 MD   → 正文原文下载
+导出 DOCX → 渲染 HTML → DOMParser → docx 库（标题/段落/列表/表格/代码/图片）
+导出 PDF  → 打印根 + 系统打印对话框
+导入 MD   → File.text()
+导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown
+导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落
+```
 
 ## 3. 响应式双形态
 
@@ -67,67 +87,84 @@ Vditor upload.handler(files)
 |---|---|---|
 | 导航 | `M3eNavRail`（左侧竖排） | `M3eNavBar`（底部横排） |
 | 主区 | `M3eSplitPane`（start=列表 / end=编辑器常驻） | 列表 or 全屏编辑器（有 noteId 则全屏） |
-| 列表 | `NoteList variant="compact"` | `NoteList variant="card"` |
-| 大纲 | Vditor 内置 outline（`uiStore.tocOpen` 控制） | 编辑器内 |
+| 列表 | `NoteList variant="compact"` + 文件夹树 | `NoteList variant="card"` + 文件夹树 |
 | 返回 | 无需（列表常驻） | `EditorPane onBack` 回列表 |
 
-**共享**（不复制两份）：`notesStore` / `useNotes` / `useNoteEditor` / `useAttachment` / `useSearch` / `VditorEditor` / `datasource`。分叉仅在两套 Layout 的 JSX 与 `NoteList` 的 variant。
+**共享**：`notesStore` / `uiStore.listMode` / `useMarkdownSession` / `MarkdownEditor` / `MarkdownPreview` / `datasource`。
+列表筛选（笔记/收藏/搜索 + 当前文件夹）由 `uiStore` 持有，**跨 `/n/:id` 保持**，返回列表不丢筛选。
 
-## 4. 主题（方案 B）
+## 4. 主题与印刷
 
 ```
-settingsStore(scheme/seedColor/…) ──┬──→ ThemeProvider <m3e-theme>
-                                    │      └─ 在 m3e-theme 元素上生成 --md-sys-color-* token
-                                    │         （实测：token 不在 :root/body，画布须为其后代）
-                                    └──→ useThemeSync：auto 解析成 resolvedScheme
-                                           └─ syncVditorTheme 切 Vditor 内置主题
-                                              + vditor-theme.css 用 token 覆写 .vditor-*
+settingsStore(scheme/seedColor/previewCss…)
+  ├─→ ThemeProvider <m3e-theme> 生成 --md-sys-color-* token（token 在 m3e-theme 元素上）
+  └─→ useThemeSync：auto → resolvedScheme
+        └─→ 预览代码高亮在 github / github-dark 主题间切换
+            + settings.previewCss 追加到内置排版样式之后（可覆盖字号/页边距/字体）
 ```
-明暗切换：token 值随 `<m3e-theme scheme>` 动态重算 → `vditor-theme.css` 的 `var(--md-sys-color-*)` 天然跟随；Vditor 内置 preview/代码高亮主题由 `setTheme` 切换（受 `readyRef` 门闩保护，见 ADR-009/015）。
 
-## 5. 命令式组件封装（VditorEditor★）
+- 编辑器语法高亮颜色全部走 `var(--md-sys-color-*)`，明暗自动跟随。
+- 预览/打印内置「书籍排版」样式（`features/preview/themes.ts`），用户可在预览工具栏的
+  「打印主题」面板里追加自定义 CSS，实时生效。
+- 自定义 CSS 只在本机应用内注入，不涉及远程内容；Markdown 渲染关闭原始 HTML（`html:false`）。
 
-Vditor 是命令式类（`new Vditor(el, options)`），在 React 19 StrictMode 下封装的**已验证约束**（详见 ADR-009）：
-- **实例 DOM 隔离**：每挂载创建独立 `host` 子元素，cleanup 时 `host.remove()`——防 lute 异步 `after` 渲染出僵尸实例。
-- **幂等守卫** `mountedRef` + cleanup `destroy()` + 复位。
-- **就绪门闩** `readyRef`：lute 异步加载完（`after`）才允许 `setTheme`/`setValue`。
-- **受控折中**：`latestValueRef` 为内部真相源，`initialValue` 仅切笔记时回灌 + 复原光标/滚动，避免打断输入。
-- 回调存 `ref`（`onChangeRef`/`schemeRef`）不进依赖数组，避免父重渲染反复重建。
+## 5. 编辑器封装（MarkdownEditor★）
+
+CodeMirror 6 是命令式 API，React 封装遵循：
+
+- **半受控**：`value` 只在挂载时进入 `EditorState.create({doc})`；切换笔记由父级 `key={noteId}` 重挂载。
+- **不回流**：`updateListener` 只向上通知，不把父级 state 再 dispatch 回文档（避免 CJK 组合输入乱序）。
+- **按需加载**：渲染管线（markdown-it/KaTeX/highlight.js）只在进入预览/打印时动态 import；
+  Mermaid、docx、mammoth、pdfjs 均为动态 import，不进入首屏。
+- **文件入口**：`paste`/`drop` 由 `EditorView.domEventHandlers` 拦截，交给上层存 blob 后插入引用。
 
 ## 6. 存储
 
-IndexedDB `claw-clip-v2`（与旧库物理隔离）：
+IndexedDB `claw-clip-v2`（v2，与旧库物理隔离）：
 
 | store | keyPath | 索引 | 内容 |
 |---|---|---|---|
-| `notes` | id | updatedAt/starred/createdAt/tags(multiEntry) | 完整 Note（含 content） |
+| `notes` | id | updatedAt/starred/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId） |
+| `folders` | id | parentId/updatedAt | 文件夹（扁平存储，UI 递归组树） |
 | `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer） |
 | `meta` | key | — | schemaVersion 等 |
 
-`datasource.ts` 门面按 `enableStoringLocally` 切 Local（IndexedDB）/ Remote（占位未实现）。`db.ts` 提供 `openDB()` Promise 单例 + `withTx()` 事务封装（oncomplete 才 resolve）+ `__resetDbSingleton()`（测试防串库）。
+`datasource.ts` 门面按 `enableStoringLocally` 切 Local/Remote（占位）。`db.ts` 提供
+`openDB()` Promise 单例 + `withTx()` + `__resetDbSingleton()`；v1→v2 升级会补建 `folders`
+store 与 `notes.folderId` 索引。列表查询带请求序号，过滤条件快速切换时丢弃过期响应。
 
 ## 7. 测试金字塔
 
-- **Vitest 单测**（jsdom + fake-indexeddb + Node Blob/File）：data/stores/hooks/utils 纯逻辑。133+ 用例，含旧「编辑=删旧建新」bug 回归。
-- **Playwright E2E**（chromium，跑 dev server 带 `/claw-clip/` base）：编辑器与 M3E 交互。覆盖新建/编辑/自动保存持久化/原地编辑 id 不变/附件闭环/离线自托管/明暗/StrictMode 幂等/响应式断点。
-- 选择器约定（实测）：IR 编辑区 `.vditor-ir .vditor-reset`；token 读 `m3e-theme` 或其后代；用确定性信号（轮询 IDB / waitForFunction）替代固定 sleep。
+- **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
+  文件夹 CRUD 与级联删除、DOCX 导出、导入分发、查询过滤/分页、自动保存与快捷键等。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base）：编辑/预览/自动保存/刷新持久化/
+  原地编辑 id 不变/附件闭环/双形态断点切换/文件夹/导入/导出 MD/DOCX/PDF/可配置预览主题。
+- 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`
+  （打印根为 `md-preview-print`，避免重复）；确定性信号用 `expect.poll` / `waitForSelector`。
 
 ## 8. 构建与部署
 
+- 包管理器 **pnpm**（lockfile 为 `pnpm-lock.yaml`；`package-lock.json` 已移除）。依赖统一用 `pnpm install --frozen-lockfile` 安装。
 - Vite 8 + `@vitejs/plugin-react`，`base:'/claw-clip/'`，dev 端口 24680，`@`→src alias。
-- `scripts/copy-vditor.mjs`：predev/prebuild/postinstall 拷 `vditor/dist`→`public/vditor/dist`（离线自托管，见 ADR-007）。
-- CI（`.github/workflows/deploy.yml`）：Node 24 + `npm ci` + type-check + 单测门禁 + build + `cp dist/index.html dist/404.html`（SPA fallback）→ GitHub Pages。
+- KaTeX 字体与 Material Symbols 字体随构建产物自托管，运行时零公网 CDN 依赖。
+- CI（`.github/workflows/deploy.yml`）：Node 24 + `pnpm install --frozen-lockfile` + type-check + 单测门禁 + build + `cp dist/index.html dist/404.html`（SPA fallback）→ GitHub Pages。
 
 ## 9. 关键文件索引
 
 | 文件 | 职责 |
 |---|---|
-| `src/components/editor/VditorEditor.tsx` | ★ 最高风险最高价值：Vditor 命令式封装（ADR-009 全部坑） |
-| `src/hooks/useNoteEditor.ts` | 编辑会话桥接：hydrate/dehydrate + 节流自动保存 |
-| `src/data/local.ts` | LocalDataSource：原地 upsert（修正旧 bug）+ 级联删 |
-| `src/data/blobStore.ts` | 附件 blob + clawclip://↔objectURL 双向映射 |
-| `src/stores/notesStore.ts` | 数据真相源，乐观更新 + CRUD |
-| `src/styles/vditor-theme.css` | 方案 B：token 覆写 .vditor-* |
-| `src/hooks/useThemeSync.ts` | 方案 B 明暗解析引擎 |
-| `src/layouts/AppShell.tsx` | 响应式双形态分派 |
-| `src/components/m3e/index.ts` | M3E 集中再导出（收敛 bus-factor） |
+| `src/data/db.ts` / `local.ts` / `query.ts` | IndexedDB 连接、CRUD、过滤排序分页 |
+| `src/data/exchange.ts` | MD/DOCX/PDF 导入导出（重型依赖动态加载） |
+| `src/data/blobStore.ts` | 附件 blob + `clawclip://` ⇄ object URL |
+| `src/stores/notesStore.ts` | 笔记/文件夹真相源 + noteCache + 列表请求序号 |
+| `src/hooks/useMarkdownSession.ts` | 编辑会话：加载、节流自动保存、卸载落库 |
+| `src/hooks/useRenderedMarkdown.ts` | 按需渲染 + 附件水合 |
+| `src/components/editor/MarkdownEditor.tsx` | CodeMirror 6 封装 |
+| `src/features/editor/EditorPane.tsx` | 顶栏 + 编辑/预览 + 导出 + 打印根 |
+| `src/features/preview/themes.ts` | 内置印刷排版 + 自定义 CSS 合成 |
+
+## 10. 已知限制
+
+- **PDF 回导是启发式的**：只保证文字可编辑，不保证版式、表格、图片还原。
+- **DOCX 导出**覆盖常见块级结构（标题/段落/列表/表格/代码/图片），复杂样式（批注、目录域）不迁移。
+- **Mermaid 体积较大**（elk/cytoscape 按图类型切分为懒加载 chunk），首次渲染图表会有短暂延迟。

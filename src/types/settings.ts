@@ -2,15 +2,12 @@
 
 /** M3E scheme：auto 跟随系统，light/dark 强制。 */
 export type Scheme = "auto" | "light" | "dark";
-/** 解析后的实际明暗（auto → light/dark），供 Vditor 主题同步消费。 */
+/** 解析后的实际明暗（auto → light/dark），供预览高亮主题等消费。 */
 export type ResolvedScheme = "light" | "dark";
 /** M3E contrast 等级。 */
 export type Contrast = "standard" | "medium" | "high";
 /** M3E motion 风格。 */
 export type Motion = "standard" | "expressive";
-/** Vditor 编辑模式：ir=即时渲染(对齐 Typora)，wysiwyg=所见即所得，sv=分屏源码。 */
-export type EditorMode = "ir" | "wysiwyg" | "sv";
-
 export interface Settings {
   scheme: Scheme;
   /** M3E 主题 seed 色，默认对齐旧 pink / 桃粉。 */
@@ -19,9 +16,10 @@ export interface Settings {
   /** M3E density scale（0 标准，负值更紧凑）。 */
   density: number;
   motion: Motion;
-  editorMode: EditorMode;
   /** 编辑器字号 px。 */
   fontSize: number;
+  /** 预览/打印主题 CSS（追加在内置排版样式之后；空串使用内置样式）。 */
+  previewCss: string;
 }
 
 /** 默认设置。seedColor = #FFAACC（桃粉，对齐旧 Element Plus primary=pink）。 */
@@ -31,6 +29,6 @@ export const DEFAULT_SETTINGS: Settings = {
   contrast: "standard",
   density: 0,
   motion: "expressive",
-  editorMode: "ir",
   fontSize: 16,
+  previewCss: "",
 };

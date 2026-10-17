@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
  *
  * 关键架构约束（实测得出，非文档）：
  * M3E 的 --md-sys-color-* token 设在 <m3e-theme> 元素上，靠 CSS 继承传给后代，
- * **不是**设在 :root/body。因此 light-DOM 内容（Vditor 画布）必须是 <m3e-theme>
+ * **不是**设在 :root/body。因此 light-DOM 内容（编辑器/预览）必须是 <m3e-theme>
  * 的后代才能消费 token —— 这是方案 B（主题同步）成立的前提。
  */
 
@@ -25,11 +25,14 @@ test("S1: M3E 主题挂载 + 按钮渲染 shadow DOM", async ({ page }) => {
   // m3e-theme 挂载（web component 异步定义）
   await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
 
-  // m3e-button 渲染出 shadow DOM（Lit 结果，非空标签）
-  const btn = page.locator("m3e-button").first();
+  // M3E 组件渲染出 shadow DOM（Lit 结果，非空标签）。
+  // S5 起列表头的新建按钮是 m3e-icon-button（原 S4 验证壳的 m3e-button 已移除）。
+  const btn = page.locator("m3e-icon-button").first();
   await expect(btn).toBeAttached();
-  // shadow 内首个结构元素是 div.base（Lit 模板），穿透 open shadow 定位
-  await expect(btn.locator("div.base")).toBeAttached({ timeout: 5_000 });
+  const hasShadow = await btn.evaluate(
+    (el) => !!el.shadowRoot && el.shadowRoot.childElementCount > 0,
+  );
+  expect(hasShadow).toBe(true);
 
   // M3E 在 m3e-theme 上生成了 --md-sys-color-* token
   const primary = await readToken(page, "m3e-theme", "--md-sys-color-primary");
@@ -37,7 +40,7 @@ test("S1: M3E 主题挂载 + 按钮渲染 shadow DOM", async ({ page }) => {
 
   // 方案 B 命门：token 可被 m3e-theme 子树内的 light-DOM 元素继承消费
   const appDivBg = await page.evaluate(() => {
-    const el = document.querySelector('[style*="surface-container"]') as HTMLElement;
+    const el = document.querySelector('[data-testid="app-shell"]') as HTMLElement;
     return getComputedStyle(el).backgroundColor;
   });
   expect(appDivBg).toMatch(/^rgb\(/);
@@ -52,9 +55,9 @@ test("S1: Snackbar 命令式 API 可用（Cmd+S 保存触发）", async ({ page 
 
   // 新建笔记 → 进入编辑器 → Cmd+S 保存触发 toastSuccess
   await page.getByTestId("btn-new").click();
-  await page.waitForSelector(".vditor-ir .vditor-reset", { timeout: 15_000 });
-  await page.locator(".vditor-ir .vditor-reset").first().click();
-  await page.keyboard.type("测试内容");
+  await page.waitForSelector('[data-testid="md-editor"] .cm-content', { timeout: 15_000 });
+  await page.locator('[data-testid="md-editor"] .cm-content').first().click();
+  await page.keyboard.insertText("测试内容");
   await page.keyboard.press("Control+s"); // Cmd+S 保存
 
   await expect(page.locator("m3e-snackbar")).toBeAttached({ timeout: 3_000 });

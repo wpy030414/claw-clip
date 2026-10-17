@@ -1,6 +1,6 @@
 /**
  * 主题 Provider：包装 <m3e-theme> + 字体加载 + useThemeSync 挂载。
- * 放在 React 树根，所有 light-DOM 内容（Vditor 画布）必须是其后代才能消费 token。
+ * 放在 React 树根，所有 light-DOM 内容（编辑器/预览/列表）必须是其后代才能消费 token。
  */
 import type { ReactNode } from "react";
 import { M3eTheme } from "@/components/m3e";

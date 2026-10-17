@@ -23,6 +23,8 @@ export interface Note {
   excerpt: string;
   /** 该笔记引用的 blob id 列表（删除级联 & 导出用） */
   attachmentIds: string[];
+  /** 所属文件夹 id；null/undefined = 根目录（v2 起） */
+  folderId?: string | null;
   pinned?: boolean;
   schemaVersion: 2;
 }
@@ -39,6 +41,7 @@ export type NoteSummary = Pick<
   | "updatedAt"
   | "createdAt"
   | "pinned"
+  | "folderId"
 >;
 
 export type NoteSort = "updated" | "created" | "title";
@@ -49,11 +52,13 @@ export interface NoteFilter {
   starred?: boolean;
   /** AND 语义：需同时含所有指定标签 */
   tags?: string[];
+  /** 文件夹过滤：undefined=全部；null=根目录；string=指定文件夹 */
+  folderId?: string | null;
   sort?: NoteSort;
 }
 
 /** 创建一条空笔记（未落库）。 */
-export function emptyNote(now = Date.now()): Note {
+export function emptyNote(now = Date.now(), folderId: string | null = null): Note {
   return {
     id: crypto.randomUUID(),
     title: "无标题",
@@ -65,6 +70,7 @@ export function emptyNote(now = Date.now()): Note {
     wordCount: 0,
     excerpt: "",
     attachmentIds: [],
+    folderId,
     schemaVersion: 2,
   };
 }
@@ -81,5 +87,6 @@ export function toSummary(n: Note): NoteSummary {
     updatedAt: n.updatedAt,
     createdAt: n.createdAt,
     pinned: n.pinned,
+    folderId: n.folderId,
   };
 }

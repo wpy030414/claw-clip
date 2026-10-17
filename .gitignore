@@ -29,5 +29,9 @@ coverage
 
 *.tsbuildinfo
 
-# Type defination
+# Type definitions（项目内手写 shim 需要提交）
 *.d.ts
+!src/types/shims.d.ts
+
+# 测试产物
+test-results

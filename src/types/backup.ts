@@ -1,4 +1,5 @@
 import type { Note } from "./note";
+import type { Folder } from "./folder";
 
 /**
  * 备份载荷（.dat 文件的 JSON 形状）。
@@ -12,6 +13,8 @@ export interface BackupPayload {
   /** 导出时刻（epoch ms） */
   exportedAt: number;
   notes: Note[];
+  /** 文件夹树（v2 备份新增；旧备份缺失时按空数组处理） */
+  folders?: Folder[];
   blobs: BackupBlob[];
 }
 

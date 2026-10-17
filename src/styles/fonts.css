@@ -4,7 +4,7 @@
  * 为什么必须自托管：
  * M3E 的 <m3e-icon>/<m3e-icon-button> 靠 font-family "Material Symbols Outlined" 渲染图标，
  * 但 @m3e 包内不含字体文件，官方示例走 fonts.googleapis.com CDN。
- * 本项目「本地优先」（Vditor 亦自托管），且 Google Fonts 在中国境内不可达，
+ * 本项目「本地优先」（字体与依赖全部自托管），且 Google Fonts 在中国境内不可达，
  * 故把 woff2 提取入 public/fonts 并在此声明 @font-face。
  *
  * M3E icon 默认 variant="outlined" → 对应 "Material Symbols Outlined"。

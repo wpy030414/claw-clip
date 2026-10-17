@@ -1,9 +1,9 @@
 /**
- * 编辑器面板布局样式（EditorPane）。
- * 颜色全部消费 M3E --md-sys-color-* token（方案 B），明暗自动跟随。
+ * 编辑器面板样式。颜色全部消费 M3E --md-sys-color-* token，明暗自动跟随。
  */
 
 .editor-pane {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -12,18 +12,11 @@
   color: var(--md-sys-color-on-surface);
 }
 
-.editor-pane--loading {
-  align-items: center;
-  justify-content: center;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-/* 顶栏 */
 .editor-topbar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  height: var(--topbar-height);
+  gap: 0.35rem;
+  min-height: var(--topbar-height);
   padding: 0 0.75rem;
   flex-shrink: 0;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
@@ -33,12 +26,11 @@
 .editor-title {
   flex: 1;
   min-width: 0;
-  font-size: 1.05rem;
-  font-weight: 500;
+  font-size: 1.02rem;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--md-sys-color-on-surface);
 }
 
 .editor-meta {
@@ -50,22 +42,128 @@
   flex-shrink: 0;
 }
 
-.editor-save-state[data-testid="save-state"] {
+.editor-save-state {
   min-width: 3.5em;
   text-align: right;
 }
 
-/* 画布：Vditor 撑满剩余空间 */
+.editor-topbar .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* 导出下拉 */
+.editor-export {
+  position: relative;
+  display: flex;
+}
+
+.export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-toolbar);
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
+}
+
+.export-menu button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.export-menu button:hover {
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+/* 打印主题面板 */
+.theme-panel {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.theme-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+}
+
+.theme-panel-header button {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.theme-panel textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 32vh;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  outline: none;
+}
+
+/* 画布 */
 .editor-canvas {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem;
-  position: relative; /* overlay 定位锚点 */
+  position: relative;
+  overflow: hidden;
 }
 
-/* 载入遮罩：覆盖画布但不卸载 VditorEditor 子树（见 EditorPane key={noteId} 注释） */
+.editor-canvas--preview {
+  overflow-y: auto;
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.md-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.md-editor-host .cm-editor {
+  height: 100%;
+}
+
+.md-editor-host .cm-editor.cm-focused {
+  outline: none;
+}
+
+.md-preview {
+  min-height: 100%;
+}
+
+/* 载入遮罩 */
 .editor-loading-overlay {
   position: absolute;
   inset: 0;
@@ -78,13 +176,31 @@
   backdrop-filter: blur(2px);
 }
 
-.editor-canvas [data-testid="vditor-root"],
-.editor-canvas .vditor {
-  flex: 1;
-  min-height: 0;
+/* 打印根：屏幕外，打印时占满整页 */
+#print-root {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 820px;
+  pointer-events: none;
 }
 
-/* material-symbols 图标基线对齐 */
-.editor-topbar .material-symbols-outlined {
-  font-size: 20px;
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-root,
+  #print-root * {
+    visibility: visible;
+  }
+  #print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: auto;
+    pointer-events: auto;
+  }
+  @page {
+    margin: 18mm;
+  }
 }
