@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 
 /**
@@ -108,4 +109,20 @@ test("附件: 删除笔记后无引用附件自动回收（引用计数）", asy
 
   // 笔记删除 → 引用计数归零 → blob 自动清掉
   await expect.poll(() => blobCount(page), { timeout: 5_000 }).toBe(0);
+});
+
+test("导出 HTML：附件图片内联为 data URL，离开会话仍可见", async ({ page }) => {
+  await newNote(page);
+  await dropPng(page);
+  await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
+
+  await page.getByTestId("btn-menu").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30_000 }),
+    page.getByTestId("menu-export-html").click(),
+  ]);
+
+  const html = readFileSync((await download.path())!, "utf-8");
+  expect(html).toContain("data:image/png;base64,");
+  expect(html).not.toContain("blob:");
 });

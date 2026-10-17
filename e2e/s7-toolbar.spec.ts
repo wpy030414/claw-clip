@@ -114,14 +114,16 @@ test("视图切换：编辑 / 分屏 / 预览", async ({ page }) => {
 
 test("导出 HTML：编辑模式下按需渲染并生成独立文档", async ({ page }) => {
   await newNote(page);
-  await page.keyboard.insertText("# 导出的标题\n\n正文段落");
+  await page.keyboard.insertText(
+    "# 导出的标题\n\n正文段落\n\n```mermaid\ngraph TD;\nA-->B;\n```",
+  );
 
   // 切到仅编辑：此时没有可见预览，导出仍必须拿到渲染结果
   await page.getByTestId("btn-view-edit").click();
   await page.getByTestId("btn-menu").click();
 
   const [download] = await Promise.all([
-    page.waitForEvent("download", { timeout: 15_000 }),
+    page.waitForEvent("download", { timeout: 30_000 }),
     page.getByTestId("menu-export-html").click(),
   ]);
   expect(download.suggestedFilename()).toMatch(/\.html$/);
@@ -132,6 +134,13 @@ test("导出 HTML：编辑模式下按需渲染并生成独立文档", async ({ 
   expect(html).toContain("导出的标题");
   expect(html).toContain("<h1>");
   expect(html).toContain("md-preview-content");
+  // 单文件自包含：Mermaid 渲染为内联 SVG，不再残留代码块
+  expect(html).toContain("<svg");
+  expect(html).not.toContain("language-mermaid");
+  expect(html).not.toContain("blob:");
+  // 导出产物强制浅色主题，不跟随系统深色偏好
+  expect(html).toContain("color-scheme: light");
+  expect(html).not.toContain("prefers-color-scheme: dark");
 });
 
 test("更多菜单：格式化位于第一项并强制校准 Markdown 格式", async ({ page }) => {

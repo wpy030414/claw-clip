@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { renderMermaidBlocks } from "@/utils/mermaid";
 
 interface Props {
   html: string;
@@ -24,37 +25,11 @@ export function MarkdownPreview({ html, css, className, testId = "md-preview" }:
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const blocks = Array.from(root.querySelectorAll<HTMLElement>("code.language-mermaid"));
-    if (blocks.length === 0) return;
-
-    let alive = true;
-    void (async () => {
-      const mermaid = (await import("mermaid")).default;
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        theme: scheme === "dark" ? "dark" : "default",
-      });
-      for (const block of blocks) {
-        if (!alive) return;
-        const code = block.textContent ?? "";
-        try {
-          const id = `mermaid-${Math.random().toString(36).slice(2)}`;
-          const { svg } = await mermaid.render(id, code);
-          const pre = block.closest("pre");
-          const holder = document.createElement("div");
-          holder.className = "mermaid-rendered";
-          holder.innerHTML = svg;
-          (pre ?? block).replaceWith(holder);
-        } catch {
-          /* 单个图表失败不影响整篇预览 */
-        }
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
+    // 渲染逻辑与 HTML/DOCX/PDF 导出共用（utils/mermaid.ts）；
+    // 这里不取消：切走后节点已脱离文档，替换操作无副作用。
+    void renderMermaidBlocks(root, {
+      theme: scheme === "dark" ? "dark" : "default",
+    });
   }, [html, scheme]);
 
   return (

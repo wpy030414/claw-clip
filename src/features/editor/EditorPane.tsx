@@ -25,10 +25,12 @@ import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
 import { hydrateMarkdown, releaseBlobUrls, saveBlob } from "@/data/blobStore";
 import {
   buildHtmlDocument,
+  buildPrintDocument,
   downloadBlob,
   downloadText,
   htmlToDocx,
-  htmlToPdf,
+  prepareExportHtml,
+  printHtmlDocument,
   safeFilename,
 } from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
@@ -156,15 +158,20 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     [noteId],
   );
 
-  /** 导出 HTML/DOCX 时若当前没有可见预览，按需渲染一次（不改变视图状态）。 */
-  const renderForExport = async (): Promise<string> => {
-    if (htmlReady) return html;
+  /**
+   * 导出用渲染：**总是**用当前正文重新渲染。
+   *
+   * 预览有 120ms 防抖且防抖期间 `htmlReady` 仍为 true，直接复用缓存会让
+   * 「输入后立刻导出」拿到上一版内容。导出是低频动作，宁可多渲染一次。
+   */
+  const renderForExport = useCallback(async (): Promise<string> => {
     const [{ renderMarkdown }, hydrated] = await Promise.all([
       import("@/utils/markdownRender"),
       hydrateMarkdown(value),
     ]);
+    if (typeof document !== "undefined" && document.fonts) await document.fonts.ready;
     return renderMarkdown(hydrated);
-  };
+  }, [value]);
 
   const handleExport = async (kind: "md" | "html" | "docx" | "pdf") => {
     setMenuOpen(false);
@@ -175,21 +182,25 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         return;
       }
       if (kind === "html") {
-        const doc = await buildHtmlDocument(title, await renderForExport(), css);
+        // Mermaid → 内联 SVG；附件 → data URL，保证单文件离线可看
+        const body = await prepareExportHtml(await renderForExport(), { mermaid: "svg" });
+        const doc = await buildHtmlDocument(title, body, css);
         downloadText(safeFilename(title, "html"), doc, "text/html");
         toastSuccess("已导出 HTML");
         return;
       }
       if (kind === "docx") {
+        // htmlToDocx 内部会做自包含处理（附件 data URL、Mermaid → PNG、原生公式）
         const blob = await htmlToDocx(await renderForExport(), title);
         downloadBlob(safeFilename(title, "docx"), blob);
         toastSuccess("已导出 DOCX");
         return;
       }
       if (kind === "pdf") {
-        const blob = await htmlToPdf(await renderForExport(), css);
-        downloadBlob(safeFilename(title, "pdf"), blob);
-        toastSuccess("已导出 PDF");
+        // 矢量 PDF：同源 HTML → 浏览器打印 → 用户「另存为 PDF」
+        const doc = await buildPrintDocument(title, await renderForExport(), css);
+        await printHtmlDocument(doc);
+        toastSuccess("已打开打印对话框，请选择「另存为 PDF」");
       }
     } catch (e) {
       toastError(`导出失败：${e instanceof Error ? e.message : String(e)}`);

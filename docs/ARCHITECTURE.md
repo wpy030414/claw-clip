@@ -1,7 +1,7 @@
 # 架构文档（ARCHITECTURE）
 
 > 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、预览同源的 DOCX/PDF 导出、MD/DOCX/PDF 互导。
-> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/导出渲染）+ html2canvas-pro/jsPDF（PDF 直接导出）+ Zustand + IndexedDB。
+> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/导出渲染）+ docx / docx-math（原生 Word 公式）+ 浏览器打印（矢量 PDF）+ Zustand + IndexedDB。
 >
 > 编辑工作区对标 markdownassistant：**左源码 + 右实时预览 + 格式工具栏**，三态视图（编辑 / 分屏 / 预览）。
 >
@@ -75,16 +75,20 @@ Markdown 源码 → debounce(120ms) → hydrateMarkdown(clawclip:// → object U
   → markdown-it（html:true + GFM/脚注/定义列表/上下标/高亮/KaTeX + highlight.js）
   → HTML → 右侧预览区（分屏 / 预览视图）；```mermaid 代码块由 MarkdownPreview 懒加载渲染为 SVG
 ```
-预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出 HTML/DOCX/PDF 时按需渲染一次（`renderForExport`）。
-预览与导出**共用同一份 HTML 与内置排版 CSS**：DOCX 用 docx 库按预览语义设置字体/标题/引用/代码/表格样式；
-PDF 用 html2canvas-pro 离屏按预览排版渲染，再由 jsPDF 切片成 A4 直接下载。
+预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出时用**当前正文重新渲染一次**
+（`renderForExport`，避免 120ms 防抖缓存导出上一版）。
+预览与导出**共用同一份 HTML 与内置排版 CSS**；导出前统一经 `prepareExportHtml()` 把运行时资源
+变成自包含产物：附件 `blob:`/`http(s):` → data URL，```mermaid → 内联 SVG（HTML/PDF）或 2× PNG
+（DOCX）。DOCX 用 docx 库按预览语义设置字体/标题/引用/代码/表格样式；公式从 KaTeX 的 TeX
+annotation 经 `docx/math::latexToMath()` 转成 Word 原生 OMML。PDF 把同一份 HTML 写进离屏
+iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜索），用户在打印对话框「另存为 PDF」。
 
 ### 导入 / 导出
 ```
 导出 MD   → 正文原文下载
-导出 HTML → 预览 CSS + 代码高亮样式内嵌为单文件（公式走原生 MathML）
-导出 DOCX → 渲染 HTML → DOMParser → docx 库（字体/标题/引用/代码/表格对齐预览）
-导出 PDF  → 离屏按预览样式渲染 → 切片 A4 → 直接下载 .pdf
+导出 HTML → 预览 CSS + 浅色高亮 + Mermaid SVG + 附件 data URL 内嵌为单文件（公式走原生 MathML，强制浅色）
+导出 DOCX → 渲染 HTML → 自包含预处理 → DOMParser → docx 库（公式 OMML、Mermaid PNG）
+导出 PDF  → 同源 HTML（强制浅色/@page）→ 隐藏 iframe → 浏览器打印 → 另存为矢量 PDF
 导入 MD   → File.text()
 导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown
 导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落
@@ -175,7 +179,7 @@ CodeMirror 6 是命令式 API，React 封装遵循：
 - **Mermaid**：未命中 highlight.js 的代码块也保留 `language-*` 类，`MarkdownPreview` 据此把 ```mermaid 懒加载渲染为 SVG。
 - **视图切换不卸载编辑器**：仅预览时源码面板用 CSS 隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
 - **按需加载**：markdown-it/KaTeX/highlight.js 仅在需要预览/导出时动态 import；
-  Mermaid、docx、mammoth、pdfjs、jsPDF、html2canvas-pro 均为动态 import，不进入首屏。
+  Mermaid、docx（含 `docx/math`）、mammoth、pdfjs 均为动态 import，不进入首屏。
 - **文件入口**：`paste`/`drop` 由 `EditorView.domEventHandlers` 拦截，交给上层存 blob 后插入引用。
 - **保存**：纯防抖 700ms，无手动保存入口；卸载/切笔记立即 flush 到 store（内存真相源）。
 
@@ -220,7 +224,12 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | 文件 | 职责 |
 |---|---|
 | `src/data/db.ts` / `local.ts` / `query.ts` | IndexedDB 连接、CRUD、过滤排序分页 |
-| `src/data/exchange.ts` | MD/DOCX/PDF 导入导出（重型依赖动态加载） |
+| `src/data/exchange.ts` | MD/DOCX/PDF 导入导出门面（重型依赖动态加载） |
+| `src/data/export/prepare.ts` | 导出自包含预处理：附件 data URL + Mermaid 渲染 |
+| `src/data/export/math.ts` | KaTeX TeX → docx 原生 OMML（`docx/math`） |
+| `src/data/export/html.ts` | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`） |
+| `src/data/export/print.ts` | 隐藏 iframe → 浏览器打印（矢量 PDF） |
+| `src/utils/mermaid.ts` | Mermaid 渲染（预览/导出共用，输出 SVG/PNG） |
 | `src/data/blobStore.ts` | 附件引用计数/回收 + `clawclip://` ⇄ object URL |
 | `src/stores/notesStore.ts` | 笔记/文件夹真相源 + noteCache + 列表请求序号 |
 | `src/hooks/useMarkdownSession.ts` | 编辑会话：加载、节流自动保存、卸载落库 |
@@ -236,7 +245,11 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 - **移动端不分屏**：<900px 时「分屏」退化为纯编辑，预览通过顶栏切到「预览」整页查看。
 - **HTML 导出使用原生 MathML**：为避免单文件依赖 KaTeX 字体，导出文档隐藏 `.katex-html`、改用 MathML；
-  现代浏览器可正常显示，老旧浏览器公式退化为纯文本。Mermaid 图表在导出 HTML 中保留为代码块。
+  现代浏览器可正常显示，老旧浏览器公式退化为纯文本。Mermaid 在导出时渲染为内联 SVG，附件内联为
+  data URL，因此单文件可离线打开。
+- **PDF 走浏览器打印**：产物是矢量文字（可选中/搜索），但需要在系统打印对话框里选择「另存为 PDF」；
+  公式显示依赖浏览器的 MathML 支持。
 - **PDF 回导是启发式的**：只保证文字可编辑，不保证版式、表格、图片还原。
-- **DOCX 导出**覆盖常见块级结构（标题/段落/列表/表格/代码/图片），复杂样式（批注、目录域）不迁移。
+- **DOCX 公式**经 `docx/math::latexToMath()` 转原生 OMML；该转换器不认识的 KaTeX 扩展宏会回退为
+  等宽 TeX 文本。DOCX 块级结构覆盖标题/段落/列表/表格/代码/图片，批注、目录域等复杂样式不迁移。
 - **Mermaid 体积较大**（elk/cytoscape 按图类型切分为懒加载 chunk），首次渲染图表会有短暂延迟。

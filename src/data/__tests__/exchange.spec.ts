@@ -1,5 +1,30 @@
-import { describe, expect, it } from "vitest";
-import { downloadText, htmlToDocx, importDocument, safeFilename } from "@/data/exchange";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import katex from "katex";
+import JSZip from "jszip";
+import {
+  buildHtmlDocument,
+  buildPrintDocument,
+  downloadText,
+  htmlToDocx,
+  importDocument,
+  prepareExportHtml,
+  printHtmlDocument,
+  safeFilename,
+} from "@/data/exchange";
+import { katexToMath, loadMathApi } from "@/data/export/math";
+
+// 单测环境没有 Mermaid 运行时；只验证「代码块被替换」这一契约。
+vi.mock("@/utils/mermaid", () => ({
+  renderMermaidBlocks: vi.fn(async (root: ParentNode) => {
+    const code = root.querySelector("code.language-mermaid");
+    if (!code) return 0;
+    const holder = document.createElement("div");
+    holder.className = "mermaid-rendered";
+    holder.innerHTML = '<svg viewBox="0 0 10 10"></svg>';
+    (code.closest("pre") ?? code).replaceWith(holder);
+    return 1;
+  }),
+}));
 
 describe("safeFilename", () => {
   it("去掉路径分隔符与保留字符", () => {
@@ -34,6 +59,17 @@ describe("htmlToDocx", () => {
     expect(blob.size).toBeGreaterThan(0);
     expect(blob.type).toContain("wordprocessingml");
   }, 20_000);
+
+  it("公式导出为 Word 原生 OMML（m:oMath），不再混入 KaTeX 文本", async () => {
+    const tex = katex.renderToString("\\frac{a}{b}", { throwOnError: false });
+    const blob = await htmlToDocx(`<p>公式：${tex}</p>`, "公式测试");
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const xml = await zip.file("word/document.xml")!.async("text");
+    expect(xml).toContain("<m:oMath>");
+    expect(xml).toContain("<m:f>");
+    // KaTeX 的 MathML annotation 不应作为普通文本进入正文
+    expect(xml).not.toContain("application/x-tex");
+  }, 20_000);
 });
 
 describe("downloadText", () => {
@@ -57,5 +93,152 @@ describe("downloadText", () => {
     URL.createObjectURL = origCreate;
     URL.revokeObjectURL = origRevoke;
     void spy;
+  });
+});
+
+describe("prepareExportHtml（自包含导出）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("把 blob: 图片内联为 data URL", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+      })),
+    );
+    const html = await prepareExportHtml('<p><img src="blob:mock/1" /></p>', {
+      mermaid: "none",
+    });
+    expect(html).toContain('src="data:image/png;base64,');
+  });
+
+  it("data URL 原样保留，不重复请求", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const html = await prepareExportHtml('<img src="data:image/png;base64,AAAA" />', {
+      mermaid: "none",
+    });
+    expect(html).toContain('src="data:image/png;base64,AAAA"');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("资源取不到时保留原 URL，不阻断导出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network");
+      }),
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const html = await prepareExportHtml('<img src="blob:mock/fail" />', { mermaid: "none" });
+    expect(html).toContain('src="blob:mock/fail"');
+  });
+
+  it("Mermaid 代码块被替换为内联图表", async () => {
+    const html = await prepareExportHtml(
+      '<pre><code class="language-mermaid">graph TD; A-->B</code></pre>',
+      { mermaid: "svg" },
+    );
+    expect(html).toContain('class="mermaid-rendered"');
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("language-mermaid");
+  });
+});
+
+describe("buildPrintDocument", () => {
+  it("HTML 导出强制浅色主题，不跟随系统深色偏好", async () => {
+    const doc = await buildHtmlDocument("浅色测试", "<h1>标题</h1>", ".x{}");
+    expect(doc).toContain("color-scheme: light;");
+    expect(doc).not.toContain("prefers-color-scheme: dark");
+  });
+
+  it("强制浅色纸面并带 A4 分页规则", async () => {
+    const doc = await buildPrintDocument(
+      "打印测试",
+      '<h1>标题</h1><pre><code class="language-mermaid">graph TD; A-->B</code></pre>',
+      ".md-preview-content { color: red; }",
+    );
+    expect(doc).toContain("@page");
+    expect(doc).toContain("color-scheme: light;");
+    expect(doc).not.toContain("prefers-color-scheme: dark");
+    expect(doc).toContain("<svg");
+    expect(doc).toContain("打印测试");
+  });
+});
+
+describe("katexToMath（Word 原生公式）", () => {
+  it("latexToMath 覆盖常见结构", async () => {
+    const api = await loadMathApi();
+    expect(api.latexToMath("\\frac{a}{b}")[0].constructor.name).toBe("MathFraction");
+    expect(api.latexToMath("\\sqrt[3]{x}")[0].constructor.name).toBe("MathRadical");
+    expect(api.latexToMath("\\hat{x}")[0].constructor.name).toBe("MathAccent");
+    expect(
+      api.latexToMath("\\begin{matrix}a&b\\\\c&d\\end{matrix}")[0].constructor.name,
+    ).toBe("MathMatrix");
+  });
+
+  it("把 KaTeX 节点转成 docx Math；未知命令返回 null", async () => {
+    await loadMathApi();
+    const host = document.createElement("div");
+    host.innerHTML = katex.renderToString("a^2+b^2=c^2", { throwOnError: false });
+    const math = katexToMath(host.querySelector(".katex")!);
+    expect(math).not.toBeNull();
+    const api = await import("docx/math");
+    expect(math).toBeInstanceOf(api.Math);
+
+    const bad = document.createElement("span");
+    bad.innerHTML =
+      '<span class="katex-mathml"><math><semantics><annotation encoding="application/x-tex">\\definitelyUnknown{x}</annotation></semantics></math></span>';
+    expect(katexToMath(bad)).toBeNull();
+  });
+});
+
+describe("printHtmlDocument", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("写入打印机文档并触发打印与事件", async () => {
+    const listeners = new Map<string, () => void>();
+    const win = {
+      focus: vi.fn(),
+      print: vi.fn(),
+      addEventListener: vi.fn((type: string, cb: () => void, _opts?: unknown) => {
+        listeners.set(type, cb);
+      }),
+    };
+    const doc = {
+      open: vi.fn(),
+      write: vi.fn(),
+      close: vi.fn(),
+      fonts: { ready: Promise.resolve() },
+      images: [],
+    };
+    const realIframe = document.createElement("iframe");
+    Object.defineProperty(realIframe, "contentDocument", { value: doc });
+    Object.defineProperty(realIframe, "contentWindow", { value: win });
+
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) =>
+      tag.toLowerCase() === "iframe" ? realIframe : origCreate(tag),
+    );
+
+    const onPrint = vi.fn();
+    window.addEventListener("clawclip:pdf-print", onPrint);
+    // 模拟浏览器在 print 后派发 afterprint
+    win.print.mockImplementation(() => listeners.get("afterprint")?.());
+
+    await printHtmlDocument("<!doctype html><html><body>hi</body></html>");
+
+    expect(doc.write).toHaveBeenCalledWith(
+      "<!doctype html><html><body>hi</body></html>",
+    );
+    expect(win.print).toHaveBeenCalledTimes(1);
+    expect(onPrint).toHaveBeenCalledTimes(1);
+    window.removeEventListener("clawclip:pdf-print", onPrint);
   });
 });

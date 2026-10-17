@@ -237,7 +237,10 @@ test("导出 Markdown 与 DOCX", async ({ page }) => {
   await page.getByTestId("create-note").click();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
   await page.locator(EDITOR).first().click();
-  await page.keyboard.insertText("# 导出标题\n\n正文段落。");
+  // 覆盖公式（原生 OMML）与 Mermaid（PNG）两条 DOCX 高风险路径
+  await page.keyboard.insertText(
+    "# 导出标题\n\n行内公式 $a^2+b^2=c^2$ 与块级公式：\n\n$$\\frac{a}{b}$$\n\n```mermaid\ngraph TD;\nA-->B;\n```\n\n正文段落。",
+  );
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
   await page.getByTestId("btn-menu").click();
@@ -257,7 +260,7 @@ test("导出 Markdown 与 DOCX", async ({ page }) => {
   expect(path).toBeTruthy();
 });
 
-test("导出 PDF 直接下载文件（不走系统打印）", async ({ page }) => {
+test("导出 PDF：调用浏览器打印（矢量），不再生成图片 PDF", async ({ page }) => {
   await page.goto("");
   await page.getByTestId("btn-new").click();
   await page.getByTestId("create-note").click();
@@ -266,13 +269,28 @@ test("导出 PDF 直接下载文件（不走系统打印）", async ({ page }) =
   await page.keyboard.insertText("# PDF 标题\n\n正文段落。");
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
+  await page.evaluate(() => {
+    (window as any).__pdfPrintEvents = 0;
+    window.addEventListener("clawclip:pdf-print", () => {
+      (window as any).__pdfPrintEvents += 1;
+    });
+  });
+
+  let downloaded = false;
+  page.once("download", () => {
+    downloaded = true;
+  });
+
   await page.getByTestId("btn-menu").click();
-  const [pdf] = await Promise.all([
-    page.waitForEvent("download", { timeout: 30_000 }),
-    page.getByTestId("menu-export-pdf").click(),
-  ]);
-  expect(pdf.suggestedFilename()).toMatch(/\.pdf$/);
-  expect(await pdf.path()).toBeTruthy();
+  await page.getByTestId("menu-export-pdf").click();
+
+  // 打印替代了 30s 的位图渲染：事件应在几百毫秒内到达
+  await expect
+    .poll(async () => page.evaluate(() => (window as any).__pdfPrintEvents as number), {
+      timeout: 30_000,
+    })
+    .toBe(1);
+  expect(downloaded).toBe(false);
 });
 
 test("导出菜单不再包含重复入口", async ({ page }) => {

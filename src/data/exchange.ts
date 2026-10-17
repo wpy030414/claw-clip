@@ -2,17 +2,25 @@
  * 导入 / 导出（MD / DOCX / PDF）。
  *
  * - 导出 MD：直接下载正文（附件保留 clawclip:// 引用，仍由应用内解析）。
- * - 导出 DOCX：把渲染后的 HTML 转成 docx（字体/字号/标题/引用/代码/表格样式对齐预览）。
- * - 导出 PDF：按预览排版离屏渲染后直接生成 PDF 文件（无需系统打印对话框）。
+ * - 导出 HTML：单文件自包含——Mermaid 内联 SVG、附件 data URL、公式走原生 MathML。
+ * - 导出 DOCX：渲染 HTML → docx；公式经 `docx/math` 转成 Word 原生 OMML，
+ *   Mermaid 转高清 PNG，图片按原始比例缩放。
+ * - 导出 PDF：同源 HTML（强制浅色纸面）→ 隐藏 iframe → 浏览器打印，
+ *   产出可选中/搜索的矢量 PDF，由用户「另存为 PDF」。
  * - 导入 MD / DOCX / PDF：DOCX 用 mammoth→HTML→turndown；PDF 用 pdf.js 抽文本 +
  *   字号/行距启发式重建标题与段落。
  *
- * 重型依赖（docx / mammoth / turndown / pdfjs-dist）全部动态 import，
+ * 重型依赖（docx / docx/math / mammoth / turndown / pdfjs-dist）全部动态 import，
  * 不进入首屏包体。
  */
 
-import hljsLight from "highlight.js/styles/github.css?inline";
-import hljsDark from "highlight.js/styles/github-dark.css?inline";
+import { katexTex, katexToMath, loadMathApi } from "./export/math";
+import { buildHtmlDocument } from "./export/html";
+import { buildPrintDocument, printHtmlDocument } from "./export/print";
+import { prepareExportHtml } from "./export/prepare";
+
+export { buildHtmlDocument, buildPrintDocument, prepareExportHtml, printHtmlDocument };
+export type { BuildHtmlOptions } from "./export/html";
 
 export interface ImportedDocument {
   title: string;
@@ -83,6 +91,24 @@ function inlineRuns(
     }
     if (!isElement(child)) continue;
     const tag = child.tagName.toLowerCase();
+    // 公式：KaTeX 会同时输出 MathML 与 HTML 两份内容，直接递归会把公式拆成
+    // 重复的字符 + 原始 TeX。这里优先转成 Word 原生公式，失败才回退 TeX 文本。
+    if (tag === "span" && child.classList.contains("katex")) {
+      const math = katexToMath(child);
+      if (math) {
+        runs.push(math);
+        continue;
+      }
+      const tex = katexTex(child);
+      if (tex) {
+        runs.push(new TextRun({ text: tex, font: "Courier New", size: 20 }));
+        continue;
+      }
+    }
+    if (tag === "span" && child.classList.contains("katex-error")) {
+      runs.push(new TextRun({ text: child.textContent ?? "", color: "CC0000" }));
+      continue;
+    }
     if (tag === "br") {
       runs.push(new TextRun({ break: 1 }));
       continue;
@@ -102,24 +128,84 @@ function inlineRuns(
 /** docx 构造器集合（动态 import 后注入，避免把 docx 打进首屏）。 */
 let docxApi: typeof import("docx");
 
+type DocxImageType = "jpg" | "png" | "gif" | "bmp";
+
+/** 解码图片（`decode()` 在个别浏览器对 SVG 会失败，回退 onload）。 */
+function decodeImage(img: HTMLImageElement): Promise<void> {
+  if (typeof img.decode === "function") {
+    return img.decode().catch(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("图片解码失败"));
+        }),
+    );
+  }
+  return new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("图片解码失败"));
+  });
+}
+
+function supportedImageType(mime: string): DocxImageType | null {
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
+  if (mime.includes("png")) return "png";
+  if (mime.includes("gif")) return "gif";
+  if (mime.includes("bmp")) return "bmp";
+  return null;
+}
+
+/** 读取图片二进制与自然尺寸；webp/svg 等 Word 不支持的格式统一栅格化为 PNG。 */
+async function loadImage(
+  src: string,
+): Promise<{ data: ArrayBuffer; type: DocxImageType; width: number; height: number } | null> {
+  const res = await fetch(src);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.src = url;
+  try {
+    await decodeImage(img);
+    const width = img.naturalWidth || 480;
+    const height = img.naturalHeight || 320;
+    const supported = supportedImageType(blob.type);
+    if (supported) {
+      return { data: await blob.arrayBuffer(), type: supported, width, height };
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, width, height);
+    const png = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/png"),
+    );
+    if (!png) return null;
+    return { data: await png.arrayBuffer(), type: "png", width, height };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** 图片 → 居中段落：按原始宽高比缩放到文档可用宽度内，不再固定 480×320。 */
 async function imageParagraph(src: string): Promise<DocxChild | null> {
   if (!src || src.startsWith("clawclip://")) return null;
   try {
     const { Paragraph, ImageRun } = docxApi;
-    const res = await fetch(src);
-    const data = await res.arrayBuffer();
-    const mime = res.headers.get("content-type") ?? "image/png";
-    const type = mime.includes("jpeg") || mime.includes("jpg")
-      ? "jpg"
-      : mime.includes("gif")
-        ? "gif"
-        : "png";
+    const image = await loadImage(src);
+    if (!image) return null;
+    // 不放大：只在大图时等比缩小（A4 正文宽度约 480pt）
+    const scale = Math.min(480 / image.width, 640 / image.height, 1);
     return new Paragraph({
       children: [
         new ImageRun({
-          data,
-          type: type as "png" | "jpg" | "gif",
-          transformation: { width: 480, height: 320 },
+          data: image.data,
+          type: image.type,
+          transformation: {
+            width: Math.max(1, Math.round(image.width * scale)),
+            height: Math.max(1, Math.round(image.height * scale)),
+          },
         }),
       ],
     });
@@ -130,7 +216,8 @@ async function imageParagraph(src: string): Promise<DocxChild | null> {
 
 /** HTML 元素 → docx 块级元素（列表）。 */
 async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
-  const { Paragraph, HeadingLevel, Table, TableRow, TableCell, TextRun, WidthType } = docxApi;
+  const { Paragraph, HeadingLevel, Table, TableRow, TableCell, TextRun, WidthType, AlignmentType } =
+    docxApi;
   const tag = el.tagName.toLowerCase();
   const heading = tag.match(HEADING_RE);
   if (heading) {
@@ -142,6 +229,20 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
     ];
   }
   if (tag === "p") {
+    // 块级公式：<p class="katex-block"><span class="katex-display">…
+    if (el.classList.contains("katex-block") || el.querySelector(":scope > .katex-display")) {
+      const katex = el.querySelector(".katex");
+      const math = katex ? katexToMath(katex) : null;
+      if (math) {
+        return [
+          new Paragraph({
+            children: [math as never],
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 120, after: 120 },
+          }),
+        ];
+      }
+    }
     const imgs = Array.from(el.querySelectorAll("img"));
     const text = (el.textContent ?? "").trim();
     const out: DocxChild[] = [];
@@ -239,8 +340,11 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
 /** HTML → DOCX Blob。 */
 export async function htmlToDocx(html: string, title: string): Promise<Blob> {
   docxApi = await import("docx");
+  await loadMathApi();
   const { Document, Packer, Paragraph, TextRun } = docxApi;
-  const dom = new DOMParser().parseFromString(html, "text/html");
+  // 自包含处理（幂等）：附件 blob:/http → data URL；Mermaid 代码块 → 高清 PNG
+  const prepared = await prepareExportHtml(html, { mermaid: "png" });
+  const dom = new DOMParser().parseFromString(prepared, "text/html");
 
   const children: DocxChild[] = [];
   for (const el of Array.from(dom.body.children)) {
@@ -328,113 +432,6 @@ export async function htmlToDocx(html: string, title: string): Promise<Blob> {
     ],
   });
   return Packer.toBlob(doc);
-}
-
-/* ------------------------------------------------------------------ */
-/* PDF 导出                                                            */
-/* ------------------------------------------------------------------ */
-
-/** 离屏预览容器的浅色 token：PDF 始终按浅色纸面输出，不跟随界面明暗。 */
-const PDF_PREVIEW_TOKENS = `
-  --md-sys-color-on-surface: #1d1b20;
-  --md-sys-color-on-surface-variant: #49454f;
-  --md-sys-color-primary: #6750a4;
-  --md-sys-color-tertiary-container: #ffd8e4;
-  --md-sys-color-outline-variant: #cac4d0;
-  --md-sys-color-surface-container-low: #f7f2fa;
-  --md-sys-color-surface-container: #f3edf7;
-  --md-sys-color-surface-container-high: #ece6f0;
-`;
-
-/** 把离屏容器里的 mermaid 代码块换成 SVG（与预览区一致）。 */
-async function renderMermaidForExport(host: HTMLElement): Promise<void> {
-  const blocks = Array.from(host.querySelectorAll<HTMLElement>("code.language-mermaid"));
-  if (blocks.length === 0) return;
-  const mermaid = (await import("mermaid")).default;
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default" });
-  for (const block of blocks) {
-    try {
-      const { svg } = await mermaid.render(`pdf-mermaid-${Math.random().toString(36).slice(2)}`, block.textContent ?? "");
-      const holder = document.createElement("div");
-      holder.className = "mermaid-rendered";
-      holder.innerHTML = svg;
-      (block.closest("pre") ?? block).replaceWith(holder);
-    } catch {
-      /* 单个图表失败不影响整篇导出 */
-    }
-  }
-}
-
-/**
- * HTML → PDF Blob（直接下载，不走系统打印）。
- *
- * 用与预览同一份 `md-preview-content` 排版与主题 CSS 离屏渲染，
- * 再按 A4 高度切片贴进 jsPDF，因此版式、字体与代码高亮与预览基本一致。
- */
-export async function htmlToPdf(bodyHtml: string, previewCss: string): Promise<Blob> {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import("html2canvas-pro"),
-    import("jspdf"),
-  ]);
-
-  const host = document.createElement("div");
-  host.id = "clawclip-pdf-host";
-  host.setAttribute("aria-hidden", "true");
-  host.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:760px;background:#ffffff;color-scheme:light;z-index:-1;";
-  const style = document.createElement("style");
-  style.textContent = `#clawclip-pdf-host { ${PDF_PREVIEW_TOKENS} }
-#clawclip-pdf-host .md-preview-content { max-width:none; margin:0; }
-${hljsLight}
-${previewCss}`;
-  const article = document.createElement("article");
-  article.className = "md-preview-content";
-  article.innerHTML = bodyHtml;
-  host.append(style, article);
-  document.body.appendChild(host);
-
-  try {
-    await renderMermaidForExport(host);
-    const canvas = await html2canvas(article, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-      logging: false,
-    });
-
-    const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    // 一张 canvas 按页高切片：每页最多容纳的 canvas 像素高度
-    const sliceHeight = Math.max(1, Math.floor((canvas.width * pageHeight) / pageWidth));
-
-    let offset = 0;
-    while (offset < canvas.height) {
-      const height = Math.min(sliceHeight, canvas.height - offset);
-      const slice = document.createElement("canvas");
-      slice.width = canvas.width;
-      slice.height = height;
-      const ctx = slice.getContext("2d");
-      if (!ctx) throw new Error("无法创建 PDF 画布");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, slice.width, height);
-      ctx.drawImage(canvas, 0, offset, canvas.width, height, 0, 0, canvas.width, height);
-      if (offset > 0) pdf.addPage();
-      pdf.addImage(
-        slice.toDataURL("image/jpeg", 0.92),
-        "JPEG",
-        0,
-        0,
-        pageWidth,
-        (height * pageWidth) / canvas.width,
-      );
-      offset += height;
-    }
-
-    return pdf.output("blob");
-  } finally {
-    host.remove();
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -575,72 +572,4 @@ export async function importDocument(file: File): Promise<ImportedDocument> {
     return { title, content: await pdfToMarkdown(file) };
   }
   throw new Error(`不支持的文件类型：.${ext || "未知"}`);
-}
-
-/* ------------------------------------------------------------------ */
-/* HTML 导出                                                           */
-/* ------------------------------------------------------------------ */
-
-/**
- * 生成可单独打开的 HTML 文档（内嵌预览主题与代码高亮样式）。
- *
- * 公式说明：KaTeX 的 CSS 依赖自带字体文件，无法在单文件里零成本内联。
- * 这里关闭 `.katex-html`、改用 KaTeX 同时输出的原生 MathML（现代浏览器均支持），
- * 因此导出的 HTML 不依赖 CDN、也不需要 KaTeX 字体即可显示公式。
- */
-export async function buildHtmlDocument(
-  title: string,
-  bodyHtml: string,
-  previewCss: string,
-): Promise<string> {
-  const safeTitle = title.replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
-  );
-  return `<!doctype html>
-<html lang="zh">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${safeTitle}</title>
-<style>
-:root {
-  color-scheme: light dark;
-  --md-sys-color-on-surface: #1d1b20;
-  --md-sys-color-on-surface-variant: #49454f;
-  --md-sys-color-primary: #6750a4;
-  --md-sys-color-tertiary-container: #ffd8e4;
-  --md-sys-color-outline-variant: #cac4d0;
-  --md-sys-color-surface-container-low: #f7f2fa;
-  --md-sys-color-surface-container: #f3edf7;
-  --md-sys-color-surface-container-high: #ece6f0;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --md-sys-color-on-surface: #e6e1e5;
-    --md-sys-color-on-surface-variant: #cac4d0;
-    --md-sys-color-primary: #d0bcff;
-    --md-sys-color-tertiary-container: #633b48;
-    --md-sys-color-outline-variant: #49454f;
-    --md-sys-color-surface-container-low: #1d1b20;
-    --md-sys-color-surface-container: #211f26;
-    --md-sys-color-surface-container-high: #2b2930;
-  }
-  body { background: #121212; }
-}
-html { background: #fff; }
-body { margin: 0; padding: 0; }
-/* 单文件导出：用 KaTeX 的原生 MathML 代替依赖字体的 HTML 渲染 */
-.katex-html { display: none !important; }
-.katex-mathml { display: inline !important; }
-.katex-display .katex-mathml { display: block !important; }
-@media print { body { background: #fff; } }
-</style>
-<style media="(prefers-color-scheme: light)">${hljsLight}</style>
-<style media="(prefers-color-scheme: dark)">${hljsDark}</style>
-<style>${previewCss}</style>
-</head>
-<body>
-<article class="md-preview-content">${bodyHtml}</article>
-</body>
-</html>`;
 }

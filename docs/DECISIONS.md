@@ -261,7 +261,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 
 ---
 
-## ADR-018 · 预览 / DOCX / PDF 导出共用同一份渲染结果与排版语义 ✅
+## ADR-018 · 预览 / DOCX / PDF 导出共用同一份渲染结果与排版语义 ✅（PDF 实现由 ADR-038 取代）
 
 **决策**：
 - 一份 `renderMarkdown()`（markdown-it + 扩展插件 + highlight.js）输出 HTML。
@@ -813,3 +813,46 @@ logo、等宽标题与底部 bar 的视觉关系。
 
 **验证**：`pnpm run type-check` 通过；E2E `s4-attachment` 断言删除走 M3E 确认并回收附件；
 `s5-shell` 在 390×844 断言品牌行/GitHub/笔记树/统计/明暗切换可见且 `tab-outline` 不存在。
+
+---
+
+## ADR-038 · 导出保真：HTML 自包含、DOCX 原生公式、PDF 矢量打印 ✅
+
+**背景**：三条导出链路各自偷懒：HTML 里 Mermaid 仍是代码块、附件是页面一关就失效的
+`blob:` URL；DOCX 把 KaTeX 的 MathML/HTML/TeX 三份内容当普通文本递归，Word 公式乱码，
+Mermaid 退化成代码，图片被固定成 480×320；PDF 用 html2canvas 整页截图 + jsPDF 切片，
+产物是不可选中/搜索的图片，分页还会从段落中间切断。用户要求三种格式都能「带走后成立」。
+
+**决策**：
+- **共用自包含预处理** `prepareExportHtml()`：解析导出副本 → 附件 `blob:`/`http(s):`
+  经 `blobToBase64()` 转 data URL → Mermaid 渲染。只处理导出副本，预览仍用 object URL。
+- **HTML**：Mermaid 渲染为内联 SVG（`utils/mermaid.ts`，与预览共用同一套逻辑），
+  附件内联为 data URL，公式继续走 KaTeX 的原生 MathML；**产物强制浅色主题**，
+  不跟随阅读者的系统深色偏好，避免白底/纸面上低对比度。单文件离线可看。
+- **DOCX**：从 KaTeX 的 `annotation[encoding="application/x-tex"]` 取原始 TeX，交给
+  `docx@9.11.0` 的 **`docx/math::latexToMath()`** 转成 Word 原生 OMML（分式/根式/上下标/
+  求和/积分/函数/重音/矩阵/`\text` 均支持，Word 内可点击编辑）；不认识的命令回退 TeX 文本。
+  Mermaid 以 `htmlLabels: false` 渲染后经 canvas 转 2× PNG 嵌入；图片按 naturalWidth/Height
+  等比缩放到 480×640 以内。`latexToMath` 比手写 MathML→OMML 映射完整得多，且零新增依赖。
+- **PDF**：同源 HTML → 隐藏 iframe（794px 桌面宽度）→ `contentWindow.print()`。打印文档
+  `buildHtmlDocument(..., { print: true })` 强制浅色 token、只注入浅色高亮、追加
+  `@page { size:A4; margin:16mm 15mm }` 与 `break-after/break-inside` 规则，并用
+  `print-color-adjust: exact` 保留代码/表头底色。产物是矢量文字、内联 SVG 图表与原生公式；
+  代价是系统打印对话框，用户需选择「另存为 PDF」。
+- **导出前重渲染**：`renderForExport()` 不再复用预览缓存（120ms 防抖期间 `ready` 仍为
+  true，会导出上一版），每次用当前正文重新渲染并等待 `document.fonts.ready`。
+- 移除 `html2canvas-pro` / `jspdf` 依赖与旧的 `htmlToPdf()` 光栅路径。
+
+**理由**：浏览器端要同时满足「中文、矢量文字、正确分页、离线自托管」，打印是唯一不需要
+内嵌数 MB CJK 字体、也不需要服务端渲染的方案；DOCX 的 `docx/math` 让公式成为真正的 Word
+对象而不是图片；Mermaid/附件在导出副本上物化，才能保证文件离开应用后仍然完整。
+
+**后果**：PDF 不再是「点一下直接下载」，需要经过系统打印对话框（已写入 PRD/已知限制）。
+`latexToMath` 不支持的 KaTeX 扩展宏会退化为等宽 TeX 文本。导出长文档时 Mermaid/图片
+物化需要一点时间；Mermaid 渲染使用 `htmlLabels: false`，与预览的 HTML 标签版本观感略有差异。
+
+**验证**：`exchange.spec.ts` 覆盖附件 data URL、Mermaid 替换、打印文档 `@page`/浅色 token、
+`katexToMath` 的分式/根式/重音/矩阵，并用 JSZip 断言 DOCX 的 `word/document.xml` 含
+`<m:oMath>`/`<m:f>` 且不含 `application/x-tex`；E2E 覆盖 HTML（`<svg>`、无 `blob:`）、
+附件内联（`data:image/png`）、DOCX（含公式与 Mermaid）与 PDF（`clawclip:pdf-print` 事件、
+无 download）。
