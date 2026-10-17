@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * 附件闭环 E2E：选择图片 → 存 IDB blobs → 正文写 clawclip:// → 预览 hydrate 成 object URL。
+ * 附件闭环 E2E：拖入图片 → 存 IDB blobs → 正文写 clawclip:// → 预览 hydrate 成 object URL。
+ * 菜单里的「插入图片/附件」已移除，入口统一为编辑器拖放/粘贴。
  */
 
 const EDITOR = '[data-testid="md-editor"] .cm-content';
@@ -11,6 +12,16 @@ const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
+
+async function dropPng(page: any) {
+  const dataTransfer = await page.evaluateHandle((base64: string) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], "dot.png", { type: "image/png" }));
+    return dt;
+  }, PNG.toString("base64"));
+  await page.dispatchEvent(EDITOR, "drop", { dataTransfer });
+}
 
 async function newNote(page: any) {
   await page.goto("");
@@ -23,11 +34,7 @@ async function newNote(page: any) {
 test("附件: 选择图片 → 正文写入 clawclip:// 引用", async ({ page }) => {
   await newNote(page);
 
-  await page.getByTestId("file-input").setInputFiles({
-    name: "dot.png",
-    mimeType: "image/png",
-    buffer: PNG,
-  });
+  await dropPng(page);
 
   // 源码里始终保存 clawclip:// 引用（运行时 object URL 不落库）
   await expect
@@ -38,11 +45,7 @@ test("附件: 选择图片 → 正文写入 clawclip:// 引用", async ({ page }
 
 test("附件: 预览把 clawclip:// hydrate 成可显示的 object URL", async ({ page }) => {
   await newNote(page);
-  await page.getByTestId("file-input").setInputFiles({
-    name: "dot.png",
-    mimeType: "image/png",
-    buffer: PNG,
-  });
+  await dropPng(page);
   await page.waitForTimeout(800);
 
   // 右侧实时预览把 clawclip:// 水合成可显示的 object URL
@@ -54,11 +57,7 @@ test("附件: 预览把 clawclip:// hydrate 成可显示的 object URL", async (
 
 test("附件: blob 确实存进 IndexedDB blobs store", async ({ page }) => {
   await newNote(page);
-  await page.getByTestId("file-input").setInputFiles({
-    name: "dot.png",
-    mimeType: "image/png",
-    buffer: PNG,
-  });
+  await dropPng(page);
   await page.waitForTimeout(800);
 
   const count = await page.evaluate(async () => {
@@ -79,11 +78,7 @@ test("附件: blob 确实存进 IndexedDB blobs store", async ({ page }) => {
 
 test("附件: 刷新后仍能 hydrate（blob 持久化）", async ({ page }) => {
   await newNote(page);
-  await page.getByTestId("file-input").setInputFiles({
-    name: "dot.png",
-    mimeType: "image/png",
-    buffer: PNG,
-  });
+  await dropPng(page);
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
   await page.waitForTimeout(500);
 

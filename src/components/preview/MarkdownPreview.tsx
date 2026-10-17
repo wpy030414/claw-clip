@@ -1,7 +1,7 @@
 /**
  * MarkdownPreview：渲染结果展示 + 语法高亮主题 + Mermaid 增强。
  *
- * HTML 由 useRenderedMarkdown 生成（markdown-it，html:false 防 XSS）；
+ * HTML 由 useRenderedMarkdown 生成（markdown-it，html:true 支持手写 HTML，不做 XSS 过滤）；
  * 本组件只负责注入主题 CSS 与把 ```mermaid 代码块替换成 SVG。
  */
 import { useEffect, useRef } from "react";

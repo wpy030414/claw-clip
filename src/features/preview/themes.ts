@@ -1,9 +1,9 @@
 /**
- * 预览 / 打印主题 CSS。
+ * 预览 / 导出主题 CSS。
  *
- * 预览、打印与 HTML 导出共用同一套渲染结果与排版样式：
- * 用户可在「打印主题…」面板里追加自定义 CSS（settings.previewCss），
- * 用于调整字体、字号、页边距、标题样式等印刷效果。
+ * 预览、HTML 导出、DOCX 与 PDF 共用同一套排版语义（字体、字号、标题、
+ * 引用、代码、表格），保证「预览所见 ≈ 导出所得」。样式为内置常量，不提供
+ * 独立配置入口。
  */
 
 /** 内置排版：干净的技术文档风（对齐 markdownassistant 的预览观感）。 */
@@ -117,10 +117,3 @@ export const DEFAULT_PREVIEW_CSS = `
   .md-preview-content table, .md-preview-content pre, .md-preview-content blockquote { break-inside: avoid; }
 }
 `;
-
-/** 默认主题 + 用户自定义 CSS（自定义在后，可覆盖内置规则）。 */
-export function composePreviewCss(custom: string): string {
-  return custom.trim()
-    ? `${DEFAULT_PREVIEW_CSS}\n/* === 自定义预览主题 === */\n${custom}`
-    : DEFAULT_PREVIEW_CSS;
-}

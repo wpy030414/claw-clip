@@ -1,7 +1,7 @@
 # 架构文档（ARCHITECTURE）
 
-> 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、可配置印刷主题、MD/DOCX/PDF 互导。
-> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/打印/导出渲染）+ Zustand + IndexedDB。
+> 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、预览同源的 DOCX/PDF 导出、MD/DOCX/PDF 互导。
+> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/导出渲染）+ html2canvas-pro/jsPDF（PDF 直接导出）+ Zustand + IndexedDB。
 >
 > 编辑工作区对标 markdownassistant：**左源码 + 右实时预览 + 格式工具栏**，三态视图（编辑 / 分屏 / 预览）。
 >
@@ -62,22 +62,22 @@ notesStore.openNote(id)
   → 正文（存储态）始终保存 clawclip:// 引用，永不落 blob: URL
 ```
 
-### 实时预览 / 打印
+### 实时预览 / 导出
 ```
 Markdown 源码 → debounce(120ms) → hydrateMarkdown(clawclip:// → object URL)
-  → markdown-it（html:false + GFM/脚注/定义列表/上下标/高亮/KaTeX + highlight.js）
-  → HTML → 右侧预览区 / 打印根（#print-root）
+  → markdown-it（html:true + GFM/脚注/定义列表/上下标/高亮/KaTeX + highlight.js）
+  → HTML → 右侧预览区（分屏 / 预览视图）；```mermaid 代码块由 MarkdownPreview 懒加载渲染为 SVG
 ```
-预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出 HTML/DOCX 时按需渲染一次（`renderForExport`）。
-预览与打印**共用同一份 HTML**，因此「预览所见 = 打印所得」；打印根在屏幕上移出视口，
-`@media print` 时占据整页，用户通过系统「另存为 PDF」完成 PDF 导出。
+预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出 HTML/DOCX/PDF 时按需渲染一次（`renderForExport`）。
+预览与导出**共用同一份 HTML 与内置排版 CSS**：DOCX 用 docx 库按预览语义设置字体/标题/引用/代码/表格样式；
+PDF 用 html2canvas-pro 离屏按预览排版渲染，再由 jsPDF 切片成 A4 直接下载。
 
 ### 导入 / 导出
 ```
 导出 MD   → 正文原文下载
 导出 HTML → 预览 CSS + 代码高亮样式内嵌为单文件（公式走原生 MathML）
-导出 DOCX → 渲染 HTML → DOMParser → docx 库（标题/段落/列表/表格/代码/图片）
-导出 PDF  → 打印根 + 系统打印对话框
+导出 DOCX → 渲染 HTML → DOMParser → docx 库（字体/标题/引用/代码/表格对齐预览）
+导出 PDF  → 离屏按预览样式渲染 → 切片 A4 → 直接下载 .pdf
 导入 MD   → File.text()
 导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown
 导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落
@@ -133,17 +133,16 @@ IndexedDB。`createFolder()` 追加到末尾，`loadFolders()` 为旧数据补�
 ## 4. 主题与印刷
 
 ```
-settingsStore(scheme/seedColor/previewCss…)
+settingsStore(scheme/seedColor…)
   ├─→ ThemeProvider <m3e-theme> 生成 --md-sys-color-* token（token 在 m3e-theme 元素上）
   └─→ useThemeSync：auto → resolvedScheme
         └─→ 预览代码高亮在 github / github-dark 主题间切换
-            + settings.previewCss 追加到内置排版样式之后（可覆盖字号/页边距/字体）
 ```
 
 - 编辑器语法高亮颜色全部走 `var(--md-sys-color-*)`，明暗自动跟随。
-- 预览/打印内置「书籍排版」样式（`features/preview/themes.ts`），用户可在预览工具栏的
-  「打印主题」面板里追加自定义 CSS，实时生效。
-- 自定义 CSS 只在本机应用内注入，不涉及远程内容；Markdown 渲染关闭原始 HTML（`html:false`）。
+- 预览/导出内置「书籍排版」样式（`features/preview/themes.ts`），是 HTML/DOCX/PDF 的共同排版来源；
+  不再提供独立的「打印主题」配置入口，避免预览与导出各走一套样式。
+- Markdown 渲染开启原始 HTML（`html:true`），手写 HTML 原样进入预览/导出；**有意不做 XSS 过滤**（见 ADR-033）。
 
 ## 5. 编辑器封装（MarkdownEditor★）
 
@@ -160,9 +159,11 @@ CodeMirror 6 是命令式 API，React 封装遵循：
   而该函数会沿 `assignedSlot` 走进 `<m3e-theme>` 的 ShadowRoot。编辑器是 light-DOM 插槽内容，
   Shadow DOM 内的样式规则匹配不到它，会导致 CodeMirror 全部基础样式失效（等宽字体/行高/内边距/焦点描边）。
   显式传 `root: document` 把样式表挂到文档根（见 ADR-022）。
+- **行号**：CodeMirror `lineNumbers()` 常驻，gutter 透明底、等宽字，`highlightActiveLineGutter()` 让光标所在行号用 on-surface 深色加粗；行号用 flex 在 28px 行高内垂直居中。
+- **Mermaid**：未命中 highlight.js 的代码块也保留 `language-*` 类，`MarkdownPreview` 据此把 ```mermaid 懒加载渲染为 SVG。
 - **视图切换不卸载编辑器**：仅预览时源码面板用 CSS 隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
-- **按需加载**：markdown-it/KaTeX/highlight.js 仅在需要打印/导出 HTML 时动态 import；
-  Mermaid、docx、mammoth、pdfjs 均为动态 import，不进入首屏。
+- **按需加载**：markdown-it/KaTeX/highlight.js 仅在需要预览/导出时动态 import；
+  Mermaid、docx、mammoth、pdfjs、jsPDF、html2canvas-pro 均为动态 import，不进入首屏。
 - **文件入口**：`paste`/`drop` 由 `EditorView.domEventHandlers` 拦截，交给上层存 blob 后插入引用。
 - **保存**：纯防抖 700ms，无手动保存入口；卸载/切笔记立即 flush 到 store（内存真相源）。
 
@@ -188,12 +189,12 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
-  自动保存与快捷键等（165 例）。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，33 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存与快捷键等（166 例）。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，37 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
-  文件夹折叠/上传导入/导出 MD/HTML/DOCX/PDF/打印主题。
-- 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`
-  （打印根为 `md-preview-print`，避免重复）；确定性信号用 `expect.poll` / `waitForSelector`。
+  文件夹折叠与删除确认/上传导入/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简。
+- 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`；
+  确定性信号用 `expect.poll` / `waitForSelector`。
 
 ## 8. 构建与部署
 
@@ -213,10 +214,10 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | `src/hooks/useMarkdownSession.ts` | 编辑会话：加载、节流自动保存、卸载落库 |
 | `src/hooks/useRenderedMarkdown.ts` | 按需渲染 + 附件水合 |
 | `src/components/editor/MarkdownEditor.tsx` | CodeMirror 6 封装 |
-| `src/features/editor/EditorPane.tsx` | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出 + 打印根 |
+| `src/features/editor/EditorPane.tsx` | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出 |
 | `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令） |
 | `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数 |
-| `src/features/preview/themes.ts` | 内置印刷排版 + 自定义 CSS 合成 |
+| `src/features/preview/themes.ts` | 内置预览/导出排版 CSS |
 
 ## 10. 已知限制
 

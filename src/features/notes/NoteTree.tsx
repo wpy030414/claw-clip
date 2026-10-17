@@ -71,6 +71,8 @@ export function NoteTree() {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [editing, setEditing] = useState<Editing | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  /** 待确认删除的文件夹；非空时打开 M3E 确认 dialog。 */
+  const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commitLock = useRef(false);
   const cancelRef = useRef(false);
@@ -327,14 +329,15 @@ export function NoteTree() {
     setEditing(null);
   };
 
-  const handleDeleteFolder = async (folder: Folder) => {
-    if (
-      !window.confirm(
-        `删除文件夹「${folder.name}」？子文件夹及其中的笔记、附件都会被删除。`,
-      )
-    ) {
-      return;
-    }
+  /** 删除是不可逆的级联操作：先弹 M3E dialog 让用户确认。 */
+  const handleDeleteFolder = (folder: Folder) => {
+    setDeleteTarget(folder);
+  };
+
+  const confirmDeleteFolder = async () => {
+    if (!deleteTarget) return;
+    const folder = deleteTarget;
+    setDeleteTarget(null);
     await removeFolder(folder.id);
     if (currentFolderId === folder.id) setCurrentFolderId(null);
   };
@@ -496,7 +499,7 @@ export function NoteTree() {
             data-testid={`folder-delete-${folder.id}`}
             onClick={(e) => {
               e.stopPropagation();
-              void handleDeleteFolder(folder);
+              handleDeleteFolder(folder);
             }}
             onKeyDown={(e) => e.stopPropagation()}
           >
@@ -669,6 +672,37 @@ export function NoteTree() {
               <span>导入 MD / DOCX / PDF 为一条笔记</span>
             </span>
           </button>
+        </div>
+      </M3eDialog>
+
+      <M3eDialog
+        open={deleteTarget !== null}
+        data-testid="delete-folder-dialog"
+        onClosed={() => setDeleteTarget(null)}
+      >
+        <span slot="header">删除文件夹</span>
+        <div className="confirm-dialog" data-testid="delete-folder-content">
+          <p className="confirm-dialog-text">
+            删除文件夹「{deleteTarget?.name}」？其中的笔记与附件会一并删除，且无法恢复。
+          </p>
+          <div className="confirm-dialog-actions">
+            <button
+              type="button"
+              className="confirm-dialog-btn"
+              data-testid="delete-folder-cancel"
+              onClick={() => setDeleteTarget(null)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="confirm-dialog-btn confirm-dialog-btn--danger"
+              data-testid="delete-folder-confirm"
+              onClick={() => void confirmDeleteFolder()}
+            >
+              删除
+            </button>
+          </div>
         </div>
       </M3eDialog>
 

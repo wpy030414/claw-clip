@@ -6,27 +6,28 @@
  * 主区：左源码（CodeMirror）+ 右实时预览（markdown-it），编辑仍保持 Typora 式自动保存。
  *
  * 保存：纯防抖自动保存（700ms），没有手动保存入口；切笔记/卸载立即落库。
- * 导出：MD / HTML / DOCX / 打印（PDF）；打印根与预览共用同一份渲染结果。
+ * 导出：MD / HTML / DOCX / PDF 全部直接下载文件；DOCX/PDF 排版对齐预览。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownEditor, type MarkdownEditorHandle } from "@/components/editor/MarkdownEditor";
 import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 import type { MarkdownCommand } from "@/components/editor/markdownCommands";
 import { MarkdownPreview } from "@/components/preview/MarkdownPreview";
-import { toastError, toastInfo, toastSuccess } from "@/components/common/Snackbar";
+import { toastError, toastSuccess } from "@/components/common/Snackbar";
 import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore, type OutlineItem } from "@/stores/uiStore";
-import { composePreviewCss } from "@/features/preview/themes";
+import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
 import { hydrateMarkdown, releaseBlobUrls, saveBlob } from "@/data/blobStore";
 import {
   buildHtmlDocument,
   downloadBlob,
   downloadText,
   htmlToDocx,
+  htmlToPdf,
   safeFilename,
 } from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
@@ -48,20 +49,14 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const { value, loading, onChange } = useMarkdownSession(noteId);
   const activeNote = useNotesStore((s) => s.activeNote);
   const remove = useNotesStore((s) => s.remove);
-  const previewCss = useSettingsStore((s) => s.previewCss);
   const fontsize = useSettingsStore((s) => s.fontSize);
   const viewMode = useSettingsStore((s) => s.viewMode);
-  const resolvedScheme = useSettingsStore((s) => s.resolvedScheme);
   const setSetting = useSettingsStore((s) => s.set);
-  const toggleScheme = useSettingsStore((s) => s.toggleScheme);
   const setOutline = useUiStore((s) => s.setOutline);
   const isDesktop = useIsDesktop();
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [themePanel, setThemePanel] = useState(false);
-  const [printRequested, setPrintRequested] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   // 移动端没有横向空间：split 退化为纯编辑，仍可手动切到预览
@@ -69,11 +64,8 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const showPreview = effectiveView !== "edit";
 
   const wordCount = useMemo(() => countWords(value), [value]);
-  const { html, ready: htmlReady } = useRenderedMarkdown(
-    value,
-    showPreview || printRequested || themePanel,
-  );
-  const css = useMemo(() => composePreviewCss(previewCss), [previewCss]);
+  const { html, ready: htmlReady } = useRenderedMarkdown(value, showPreview);
+  const css = DEFAULT_PREVIEW_CSS;
   const title = activeNote?.title ?? "无标题";
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,7 +96,6 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   useEffect(() => {
     setSaveState("idle");
     setMenuOpen(false);
-    setThemePanel(false);
   }, [noteId]);
 
   useEffect(() => {
@@ -152,12 +143,8 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     return renderMarkdown(hydrated);
   };
 
-  const handleExport = async (kind: "md" | "html" | "docx" | "pdf" | "theme") => {
+  const handleExport = async (kind: "md" | "html" | "docx" | "pdf") => {
     setMenuOpen(false);
-    if (kind === "theme") {
-      setThemePanel((v) => !v);
-      return;
-    }
     try {
       if (kind === "md") {
         downloadText(safeFilename(title, "md"), value);
@@ -176,27 +163,15 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         toastSuccess("已导出 DOCX");
         return;
       }
-      toastInfo("在打印对话框中选择「另存为 PDF」");
-      setPrintRequested(true);
+      if (kind === "pdf") {
+        const blob = await htmlToPdf(await renderForExport(), css);
+        downloadBlob(safeFilename(title, "pdf"), blob);
+        toastSuccess("已导出 PDF");
+      }
     } catch (e) {
       toastError(`导出失败：${e instanceof Error ? e.message : String(e)}`);
     }
   };
-
-  // 打印：等 HTML 渲染就绪后再调系统打印
-  useEffect(() => {
-    if (!printRequested || !htmlReady) return;
-    const timer = setTimeout(() => {
-      const prevTitle = document.title;
-      document.title = title;
-      window.print();
-      setTimeout(() => {
-        document.title = prevTitle;
-      }, 1000);
-      setPrintRequested(false);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [printRequested, htmlReady, title]);
 
   const runCommand = (command: MarkdownCommand) => {
     if (isDesktop && effectiveView === "preview") setSetting("viewMode", "split");
@@ -312,28 +287,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
                   <span className="material-symbols-outlined">article</span> Word (.docx)
                 </button>
                 <button type="button" role="menuitem" data-testid="menu-export-pdf" onClick={() => void handleExport("pdf")}>
-                  <span className="material-symbols-outlined">print</span> 打印 / PDF
-                </button>
-                <div className="editor-menu-sep" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid="menu-attach"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <span className="material-symbols-outlined">image</span> 插入图片 / 附件
-                </button>
-                <button type="button" role="menuitem" data-testid="menu-theme" onClick={() => void handleExport("theme")}>
-                  <span className="material-symbols-outlined">palette</span> 打印主题…
-                </button>
-                <button type="button" role="menuitem" data-testid="menu-scheme" onClick={() => { toggleScheme(); setMenuOpen(false); }}>
-                  <span className="material-symbols-outlined">
-                    {resolvedScheme === "dark" ? "light_mode" : "dark_mode"}
-                  </span>
-                  {resolvedScheme === "dark" ? "切换到浅色" : "切换到深色"}
+                  <span className="material-symbols-outlined">picture_as_pdf</span> PDF (.pdf)
                 </button>
                 <div className="editor-menu-sep" />
                 <button
@@ -349,46 +303,9 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
             </>
           )}
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          data-testid="file-input"
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = "";
-            void insertFiles(files);
-          }}
-        />
       </header>
 
       <MarkdownToolbar onCommand={runCommand} />
-
-      {themePanel && (
-        <div className="theme-panel" data-testid="theme-panel">
-          <div className="theme-panel-header">
-            <strong>打印主题 CSS</strong>
-            <span className="theme-panel-actions">
-              <button type="button" onClick={() => setSetting("previewCss", "")}>
-                恢复内置
-              </button>
-              <button type="button" onClick={() => setThemePanel(false)}>
-                关闭
-              </button>
-            </span>
-          </div>
-          <textarea
-            data-testid="preview-css-input"
-            spellCheck={false}
-            value={previewCss}
-            placeholder={".md-preview-content { font-family: ...; font-size: 12pt; }\n@page { margin: 20mm; }"}
-            onChange={(e) => setSetting("previewCss", e.target.value)}
-          />
-        </div>
-      )}
 
       <div className="editor-workspace" data-view={effectiveView}>
         <section className="editor-source-pane" data-testid="source-pane">
@@ -423,12 +340,6 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         )}
       </div>
 
-      {/* 打印根：屏幕上移出视口，@media print 时占据整页 */}
-      {(printRequested || themePanel) && (
-        <div id="print-root">
-          <MarkdownPreview html={html} css={css} testId="md-preview-print" />
-        </div>
-      )}
     </div>
   );
 }

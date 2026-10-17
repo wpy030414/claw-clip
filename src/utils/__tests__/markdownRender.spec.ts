@@ -40,9 +40,15 @@ describe("renderMarkdown 扩展语法", () => {
     expect(html).toContain("hljs-keyword");
   });
 
-  it("原始 HTML 被转义（防 XSS）", () => {
-    const html = renderMarkdown('<img src=x onerror="alert(1)">');
-    expect(html).not.toContain("<img src=x");
-    expect(html).toContain("&lt;img");
+  it("mermaid 代码块保留语言类（预览据此渲染图表）", () => {
+    const html = renderMarkdown("```mermaid\ngraph TD\n  A --> B\n```");
+    expect(html).toContain('class="language-mermaid"');
+    expect(html).toContain("graph TD");
+  });
+
+  it("手写 HTML 原样保留（不做 XSS 过滤）", () => {
+    const html = renderMarkdown('<div class="raw">手写内容</div>\n\n<img src="x" onerror="alert(1)">');
+    expect(html).toContain('<div class="raw">手写内容</div>');
+    expect(html).toContain('onerror="alert(1)"');
   });
 });

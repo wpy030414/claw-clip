@@ -34,6 +34,52 @@ test("工具栏：加粗 → 标题 → 右侧预览同步", async ({ page }) =>
     .toContain("hello");
 });
 
+test("编辑器显示行号", async ({ page }) => {
+  await newNote(page);
+  await page.keyboard.insertText("第一行\n第二行\n第三行");
+
+  // CodeMirror 的 gutter 里有一个隐藏的宽度占位元素；innerText 会忽略它
+  const gutter = page.locator('[data-testid="md-editor"] .cm-lineNumbers');
+  await expect.poll(async () => gutter.innerText()).toBe("1\n2\n3");
+
+  // 行号必须与正文首行同高（不能再被额外的 gutter padding 顶下去）
+  const offset = await page.evaluate(() => {
+    const line = document.querySelector('[data-testid="md-editor"] .cm-line')!.getBoundingClientRect();
+    const first = Array.from(
+      document.querySelectorAll('[data-testid="md-editor"] .cm-lineNumbers .cm-gutterElement'),
+    ).find((el) => getComputedStyle(el).visibility !== "hidden")!;
+    return Math.abs(line.y - first.getBoundingClientRect().y);
+  });
+  expect(offset).toBeLessThan(1);
+
+  // 光标所在行号加深加粗（第 3 行，光标停在文末）
+  const active = page.locator('[data-testid="md-editor"] .cm-activeLineGutter');
+  await expect(active).toHaveText("3");
+  await expect(active).toHaveCSS("font-weight", "600");
+  await expect(active).toHaveCSS("opacity", "1");
+});
+
+test("Mermaid 代码块渲染为 SVG", async ({ page }) => {
+  await newNote(page);
+  await page.keyboard.insertText("```mermaid\ngraph TD\n  A[开始] --> B[结束]\n```");
+
+  await expect(page.getByTestId("md-preview").locator(".mermaid-rendered svg")).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
+test("手写 HTML 在预览中原样渲染", async ({ page }) => {
+  await newNote(page);
+  await page.keyboard.insertText(
+    '<div class="raw-html" style="color: rgb(1, 2, 3)">手写 HTML</div>\n\n<details><summary>展开</summary>内容</details>',
+  );
+
+  const raw = page.getByTestId("md-preview").locator(".raw-html");
+  await expect(raw).toHaveText("手写 HTML");
+  await expect(raw).toHaveCSS("color", "rgb(1, 2, 3)");
+  await expect(page.getByTestId("md-preview").locator("details summary")).toHaveText("展开");
+});
+
 test("快捷键：Cmd/Ctrl+B 加粗、Cmd/Ctrl+K 链接", async ({ page }) => {
   await newNote(page);
   await page.keyboard.insertText("hello");

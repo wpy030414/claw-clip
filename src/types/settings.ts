@@ -18,8 +18,6 @@ export interface Settings {
   motion: Motion;
   /** 编辑器字号 px。 */
   fontSize: number;
-  /** 预览/打印主题 CSS（追加在内置排版样式之后；空串使用内置样式）。 */
-  previewCss: string;
   /** 编辑工作区视图：仅编辑 / 编辑+预览分屏 / 仅预览。 */
   viewMode: "edit" | "split" | "preview";
 }
@@ -32,6 +30,5 @@ export const DEFAULT_SETTINGS: Settings = {
   density: 0,
   motion: "expressive",
   fontSize: 16,
-  previewCss: "",
   viewMode: "split",
 };

@@ -7,8 +7,10 @@
  * - KaTeX 行内/块级公式（$...$ / $$...$$）
  * - 代码块语法高亮（highlight.js 常用语言子集，随主题换色）
  *
- * 安全：`html:false` —— 不渲染正文里的原始 HTML，避免 XSS；
- * 预览/打印/导出都复用本管线的输出，保证「编辑所见 = 打印所得」。
+ * 原始 HTML：`html:true` —— 正文里手写的 HTML 原样进入输出，供预览/导出渲染。
+ * 这是**有意的产品能力**：本应用是本地单用户编辑器，不做 XSS 过滤；
+ * 导入不受信任的文档时，其中的脚本/事件属性会在预览中执行，需自行承担风险。
+ * 预览/导出都复用本管线的输出，保证「编辑所见 = 导出所得」。
  */
 import MarkdownIt from "markdown-it";
 import type { MarkdownIt as MarkdownItInstance } from "markdown-it";
@@ -37,7 +39,7 @@ const hljs = ((hljsModule as unknown as { default?: typeof hljsModule }).default
   hljsModule) as typeof hljsModule;
 
 const md: MarkdownItInstance = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   typographer: true,
   breaks: false,
@@ -50,7 +52,9 @@ const md: MarkdownItInstance = new MarkdownIt({
         /* 回退到转义输出 */
       }
     }
-    return `<pre class="hljs"><code>${md.utils.escapeHtml(code)}</code></pre>`;
+    // 未内置高亮的语言（如 mermaid）也要保留语言类，预览据此识别并渲染图表。
+    const langClass = lang ? ` class="language-${md.utils.escapeHtml(lang)}"` : "";
+    return `<pre class="hljs"><code${langClass}>${md.utils.escapeHtml(code)}</code></pre>`;
   },
 });
 

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * 工作站能力 E2E：文件夹树、导入、导出（MD/DOCX/PDF）、可配置预览主题。
+ * 工作站能力 E2E：文件夹树、导入、导出（MD/DOCX/PDF）、菜单精简与删除确认。
  */
 
 const EDITOR = '[data-testid="md-editor"] .cm-content';
@@ -98,6 +98,37 @@ test("文件夹：双击不重命名、显式按钮重命名、不可嵌套、di
   // 仍可用 Esc 关闭
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("create-dialog-content")).toBeHidden();
+});
+
+test("文件夹：删除走 M3E dialog 二次确认", async ({ page }) => {
+  await page.goto("");
+
+  await page.getByTestId("btn-new").click();
+  await page.getByTestId("create-folder").click();
+  const input = page.getByTestId("folder-edit-input").first();
+  await input.fill("待删");
+  await input.press("Enter");
+
+  const folderRow = page.locator('[data-testid^="folder-row-"]').filter({ hasText: "待删" });
+  await expect(folderRow).toBeVisible();
+
+  // 删除按钮打开 M3E dialog（不再走 window.confirm）
+  await folderRow.hover();
+  await folderRow.locator('[data-testid^="folder-delete-"]').click();
+  await expect(page.getByTestId("delete-folder-dialog")).toBeVisible();
+  await expect(page.getByTestId("delete-folder-content")).toContainText("待删");
+
+  // 取消后文件夹仍在
+  await page.getByTestId("delete-folder-cancel").click();
+  await expect(folderRow).toBeVisible();
+
+  // 再次确认删除后消失
+  await folderRow.hover();
+  await folderRow.locator('[data-testid^="folder-delete-"]').click();
+  await page.getByTestId("delete-folder-confirm").click();
+  await expect(
+    page.locator('[data-testid^="folder-row-"]').filter({ hasText: "待删" }),
+  ).toHaveCount(0);
 });
 
 test("文件夹：拖拽手动排序并持久化", async ({ page }) => {
@@ -226,49 +257,36 @@ test("导出 Markdown 与 DOCX", async ({ page }) => {
   expect(path).toBeTruthy();
 });
 
-test("导出 PDF 走系统打印（stub window.print）", async ({ page }) => {
-  await page.addInitScript(() => {
-    (window as unknown as { __printed: number }).__printed = 0;
-    window.print = () => {
-      (window as unknown as { __printed: number }).__printed += 1;
-    };
-  });
-  await page.goto("");
-  await page.getByTestId("btn-new").click();
-  await page.getByTestId("create-note").click();
-  await page.waitForSelector(EDITOR, { timeout: 15_000 });
-
-  await page.getByTestId("btn-menu").click();
-  await page.getByTestId("menu-export-pdf").click();
-
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(() => (window as unknown as { __printed: number }).__printed),
-      { timeout: 10_000 },
-    )
-    .toBeGreaterThan(0);
-});
-
-test("预览主题 CSS 可配置并即时生效", async ({ page }) => {
+test("导出 PDF 直接下载文件（不走系统打印）", async ({ page }) => {
   await page.goto("");
   await page.getByTestId("btn-new").click();
   await page.getByTestId("create-note").click();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
   await page.locator(EDITOR).first().click();
-  await page.keyboard.insertText("主题测试");
+  await page.keyboard.insertText("# PDF 标题\n\n正文段落。");
+  await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
-  // 打印主题入口在导出菜单里（不设独立设置页）
   await page.getByTestId("btn-menu").click();
-  await page.getByTestId("menu-theme").click();
-  await page.getByTestId("preview-css-input").fill(
-    ".md-preview-content { color: rgb(1, 2, 3); }",
-  );
+  const [pdf] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30_000 }),
+    page.getByTestId("menu-export-pdf").click(),
+  ]);
+  expect(pdf.suggestedFilename()).toMatch(/\.pdf$/);
+  expect(await pdf.path()).toBeTruthy();
+});
 
-  const color = await page
-    .locator('#print-root [data-testid="md-preview-print"]')
-    .evaluate((el) => getComputedStyle(el).color);
-  expect(color).toBe("rgb(1, 2, 3)");
+test("导出菜单不再包含重复入口", async ({ page }) => {
+  await page.goto("");
+  await page.getByTestId("btn-new").click();
+  await page.getByTestId("create-note").click();
+  await page.waitForSelector(EDITOR, { timeout: 15_000 });
+
+  await page.getByTestId("btn-menu").click();
+  await expect(page.getByTestId("editor-menu")).toBeVisible();
+  await expect(page.getByTestId("menu-attach")).toHaveCount(0);
+  await expect(page.getByTestId("menu-theme")).toHaveCount(0);
+  await expect(page.getByTestId("menu-scheme")).toHaveCount(0);
+  await expect(page.getByTestId("menu-export-pdf")).toContainText("PDF");
 });
 
 test("DOCX 导出后可以再导入（闭环）", async ({ page }) => {

@@ -261,16 +261,20 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 
 ---
 
-## ADR-018 · 预览 / 打印 / DOCX 导出共用同一份渲染结果 ✅
+## ADR-018 · 预览 / DOCX / PDF 导出共用同一份渲染结果与排版语义 ✅
 
 **决策**：
 - 一份 `renderMarkdown()`（markdown-it + 扩展插件 + highlight.js）输出 HTML。
-- 预览区与隐藏的 `#print-root` 共用同一 HTML；`@media print` 只显示打印根，用户通过系统「另存为 PDF」导出。
-- DOCX 导出把同一 HTML 交给 DOMParser → `docx` 库，避免「预览一种排版、导出另一种排版」。
+- DOCX 导出把同一 HTML 交给 DOMParser → `docx` 库，并通过文档默认样式对齐预览的
+  字体、字号、标题层级、引用底色、代码块与表头样式。
+- PDF 导出把同一 HTML 放进离屏的 `md-preview-content`（注入预览 CSS 与浅色 token）→
+  html2canvas-pro 渲染 → jsPDF 按 A4 高度切片 → 直接下载 `.pdf`，不再经过系统打印对话框。
+- 「打印主题」独立面板与打印根（`#print-root`）随之移除：预览即唯一的排版来源。
 
-**理由**：印刷类产品最怕「看到的和导出的不一样」。同源渲染把差异收敛到 CSS，用户改预览主题 CSS 即可同时影响打印。
+**理由**：印刷类产品最怕「看到的和导出的不一样」。同源渲染 + 对齐的导出样式把差异收敛到一处；
+直接下载文件也省掉了「在打印对话框里另存为 PDF」的多余步骤。
 
-**安全**：markdown-it `html:false`，正文原始 HTML 一律转义；自定义 CSS 只注入本机应用，不接受远程内容。
+**安全**：markdown-it 现为 `html:true`，正文原始 HTML 原样输出、不做 XSS 过滤（见 ADR-033）；离屏容器只渲染本机内容。
 
 ---
 
@@ -668,3 +672,28 @@ logo 更简单，也不会引入额外请求之外的资源。
 **验证**：`pnpm run type-check` 通过；`pnpm run test:unit` 165 例、`pnpm run test:e2e` 33 例
 全绿（E2E 断言 logo 可见、src 指向 favicon，并随主题切换 `data-dark`）；浅色/深色截图确认
 logo、等宽标题与底部 bar 的视觉关系。
+
+
+---
+
+## ADR-033 · 编辑器支持手写 HTML，不做 XSS 过滤 ✅
+
+**背景**：Markdown 管线此前设置 `html:false`，笔记正文里的原始 HTML 一律被转义，
+用户无法在文档中直接写 HTML（自定义布局、`<details>`、带 class 的容器等）。
+
+**决策**：
+- markdown-it 改为 `html:true`，原始 HTML 原样进入预览、HTML 导出与 PDF 渲染。
+- 不引入 DOMPurify/sanitize-html，也不过滤 `script` 标签或事件属性。
+
+**理由**：本应用是纯本地、单用户、无服务端的编辑器，笔记是用户自己的内容，渲染结果只在
+本人浏览器内呈现；过滤会破坏用户手写 HTML 的语义与能力。
+
+**风险与边界**：
+- 导入**不可信**的 `.md` / `.docx` / `.pdf` 后，预览中的内联事件（如 `onerror`）可能执行；
+  这是用户明确要求并接受的取舍。
+- `innerHTML` 插入的 `<script>` 通常不会执行，但事件属性会；不要把该渲染结果嵌入任何
+  多用户或远程上下文。
+- 若将来接入共享/多人协作，必须在这条边界外重新引入 sanitize。
+
+**验证**：单测断言手写 HTML 与事件属性原样保留；E2E 断言带 `style` 的 `<div>` 与 `<details>`
+在预览中真实生效。

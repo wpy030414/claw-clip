@@ -2,8 +2,8 @@
  * 导入 / 导出（MD / DOCX / PDF）。
  *
  * - 导出 MD：直接下载正文（附件保留 clawclip:// 引用，仍由应用内解析）。
- * - 导出 DOCX：把渲染后的 HTML 转成 docx（标题/段落/列表/表格/代码/图片）。
- * - 导出 PDF：走浏览器打印（打印主题 CSS 已内置），由系统「存为 PDF」。
+ * - 导出 DOCX：把渲染后的 HTML 转成 docx（字体/字号/标题/引用/代码/表格样式对齐预览）。
+ * - 导出 PDF：按预览排版离屏渲染后直接生成 PDF 文件（无需系统打印对话框）。
  * - 导入 MD / DOCX / PDF：DOCX 用 mammoth→HTML→turndown；PDF 用 pdf.js 抽文本 +
  *   字号/行距启发式重建标题与段落。
  *
@@ -76,6 +76,7 @@ function inlineRuns(
           font: style.code ? "Courier New" : undefined,
           size: style.code ? 20 : undefined,
           color: style.link ? "0563C1" : undefined,
+          shading: style.code ? { fill: "ECE6F0" } : undefined,
         }),
       );
       continue;
@@ -176,6 +177,10 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
       new Paragraph({
         children: inlineRuns(el, { italics: true }) as never,
         indent: { left: 720 },
+        shading: { fill: "F7F2FA" },
+        border: {
+          left: { style: docxApi.BorderStyle.SINGLE, size: 12, space: 8, color: "6750A4" },
+        },
       }),
     ];
   }
@@ -185,6 +190,8 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
       (line) =>
         new Paragraph({
           children: [new TextRun({ text: line || " ", font: "Courier New", size: 20 })],
+          shading: { fill: "ECE6F0" },
+          spacing: { before: 0, after: 0, line: 276 },
         }),
     );
   }
@@ -196,6 +203,8 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
         if (!["td", "th"].includes(cell.tagName.toLowerCase())) continue;
         cells.push(
           new TableCell({
+            shading:
+              cell.tagName.toLowerCase() === "th" ? { fill: "F3EDF7" } : undefined,
             children: [
               new Paragraph({
                 children: inlineRuns(cell, {
@@ -221,7 +230,7 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
     const p = await imageParagraph(el.getAttribute("src") ?? "");
     return p ? [p] : [];
   }
-  if (tag === "hr") return [new Paragraph({ text: "————" })];
+  if (tag === "hr") return [new Paragraph({ thematicBreak: true })];
   // 兜底：当作普通段落
   const text = (el.textContent ?? "").trim();
   return text ? [new Paragraph({ children: inlineRuns(el) as never })] : [];
@@ -241,8 +250,57 @@ export async function htmlToDocx(html: string, title: string): Promise<Blob> {
     children.push(new Paragraph({ children: [new TextRun(title)] }));
   }
 
+  const { BorderStyle } = docxApi;
+  const bodyFont = { ascii: "PingFang SC", eastAsia: "PingFang SC", hAnsi: "PingFang SC" };
   const doc = new Document({
     title,
+    styles: {
+      default: {
+        document: {
+          run: { font: bodyFont, size: 23, color: "1D1B20" },
+          paragraph: { spacing: { line: 360, before: 0, after: 120 } },
+        },
+        heading1: {
+          run: { font: bodyFont, size: 45, bold: true, color: "1D1B20" },
+          paragraph: {
+            keepNext: true,
+            spacing: { before: 360, after: 160 },
+            border: {
+              bottom: { style: BorderStyle.SINGLE, size: 6, space: 6, color: "CAC4D0" },
+            },
+          },
+        },
+        heading2: {
+          run: { font: bodyFont, size: 34, bold: true, color: "1D1B20" },
+          paragraph: {
+            keepNext: true,
+            spacing: { before: 300, after: 140 },
+            border: {
+              bottom: { style: BorderStyle.SINGLE, size: 6, space: 6, color: "CAC4D0" },
+            },
+          },
+        },
+        heading3: {
+          run: { font: bodyFont, size: 29, bold: true, color: "1D1B20" },
+          paragraph: { keepNext: true, spacing: { before: 260, after: 120 } },
+        },
+        heading4: {
+          run: { font: bodyFont, size: 25, bold: true, color: "1D1B20" },
+          paragraph: { keepNext: true, spacing: { before: 220, after: 100 } },
+        },
+        heading5: {
+          run: { font: bodyFont, size: 23, bold: true, color: "1D1B20" },
+          paragraph: { keepNext: true, spacing: { before: 200, after: 80 } },
+        },
+        heading6: {
+          run: { font: bodyFont, size: 23, bold: true, color: "1D1B20" },
+          paragraph: { keepNext: true, spacing: { before: 200, after: 80 } },
+        },
+        listParagraph: {
+          paragraph: { spacing: { line: 340, after: 60 } },
+        },
+      },
+    },
     numbering: {
       config: [
         {
@@ -253,14 +311,130 @@ export async function htmlToDocx(html: string, title: string): Promise<Blob> {
               format: "decimal",
               text: "%1.",
               alignment: "start",
+              suffix: docxApi.LevelSuffix.TAB,
+              style: { paragraph: { indent: { left: 720, hanging: 360 } } },
             },
           ],
         },
       ],
     },
-    sections: [{ properties: {}, children: children as never }],
+    sections: [
+      {
+        properties: {
+          page: { margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 } },
+        },
+        children: children as never,
+      },
+    ],
   });
   return Packer.toBlob(doc);
+}
+
+/* ------------------------------------------------------------------ */
+/* PDF 导出                                                            */
+/* ------------------------------------------------------------------ */
+
+/** 离屏预览容器的浅色 token：PDF 始终按浅色纸面输出，不跟随界面明暗。 */
+const PDF_PREVIEW_TOKENS = `
+  --md-sys-color-on-surface: #1d1b20;
+  --md-sys-color-on-surface-variant: #49454f;
+  --md-sys-color-primary: #6750a4;
+  --md-sys-color-tertiary-container: #ffd8e4;
+  --md-sys-color-outline-variant: #cac4d0;
+  --md-sys-color-surface-container-low: #f7f2fa;
+  --md-sys-color-surface-container: #f3edf7;
+  --md-sys-color-surface-container-high: #ece6f0;
+`;
+
+/** 把离屏容器里的 mermaid 代码块换成 SVG（与预览区一致）。 */
+async function renderMermaidForExport(host: HTMLElement): Promise<void> {
+  const blocks = Array.from(host.querySelectorAll<HTMLElement>("code.language-mermaid"));
+  if (blocks.length === 0) return;
+  const mermaid = (await import("mermaid")).default;
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default" });
+  for (const block of blocks) {
+    try {
+      const { svg } = await mermaid.render(`pdf-mermaid-${Math.random().toString(36).slice(2)}`, block.textContent ?? "");
+      const holder = document.createElement("div");
+      holder.className = "mermaid-rendered";
+      holder.innerHTML = svg;
+      (block.closest("pre") ?? block).replaceWith(holder);
+    } catch {
+      /* 单个图表失败不影响整篇导出 */
+    }
+  }
+}
+
+/**
+ * HTML → PDF Blob（直接下载，不走系统打印）。
+ *
+ * 用与预览同一份 `md-preview-content` 排版与主题 CSS 离屏渲染，
+ * 再按 A4 高度切片贴进 jsPDF，因此版式、字体与代码高亮与预览基本一致。
+ */
+export async function htmlToPdf(bodyHtml: string, previewCss: string): Promise<Blob> {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas-pro"),
+    import("jspdf"),
+  ]);
+
+  const host = document.createElement("div");
+  host.id = "clawclip-pdf-host";
+  host.setAttribute("aria-hidden", "true");
+  host.style.cssText =
+    "position:fixed;left:-10000px;top:0;width:760px;background:#ffffff;color-scheme:light;z-index:-1;";
+  const style = document.createElement("style");
+  style.textContent = `#clawclip-pdf-host { ${PDF_PREVIEW_TOKENS} }
+#clawclip-pdf-host .md-preview-content { max-width:none; margin:0; }
+${hljsLight}
+${previewCss}`;
+  const article = document.createElement("article");
+  article.className = "md-preview-content";
+  article.innerHTML = bodyHtml;
+  host.append(style, article);
+  document.body.appendChild(host);
+
+  try {
+    await renderMermaidForExport(host);
+    const canvas = await html2canvas(article, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      logging: false,
+    });
+
+    const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    // 一张 canvas 按页高切片：每页最多容纳的 canvas 像素高度
+    const sliceHeight = Math.max(1, Math.floor((canvas.width * pageHeight) / pageWidth));
+
+    let offset = 0;
+    while (offset < canvas.height) {
+      const height = Math.min(sliceHeight, canvas.height - offset);
+      const slice = document.createElement("canvas");
+      slice.width = canvas.width;
+      slice.height = height;
+      const ctx = slice.getContext("2d");
+      if (!ctx) throw new Error("无法创建 PDF 画布");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, slice.width, height);
+      ctx.drawImage(canvas, 0, offset, canvas.width, height, 0, 0, canvas.width, height);
+      if (offset > 0) pdf.addPage();
+      pdf.addImage(
+        slice.toDataURL("image/jpeg", 0.92),
+        "JPEG",
+        0,
+        0,
+        pageWidth,
+        (height * pageWidth) / canvas.width,
+      );
+      offset += height;
+    }
+
+    return pdf.output("blob");
+  } finally {
+    host.remove();
+  }
 }
 
 /* ------------------------------------------------------------------ */

@@ -45,7 +45,9 @@ test("S5 桌面：页签 + 行级新建 + 笔记树", async ({ page }) => {
   ]);
   expect(tabsBox && docsBox && outlineBox).toBeTruthy();
   expect(Math.abs(docsBox!.width - outlineBox!.width)).toBeLessThan(1);
-  expect(docsBox!.width + outlineBox!.width).toBeGreaterThan(tabsBox!.width - 4);
+  // 分段控件：容器内边距 3px×2 + 按钮间距 2px，两个页签等分剩余宽度
+  const tabsInner = tabsBox!.width - 6 - 2;
+  expect(Math.abs(docsBox!.width + outlineBox!.width - tabsInner)).toBeLessThan(1);
   await expect(page.getByTestId("note-tree")).toBeVisible();
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await expect(page.getByTestId("btn-new")).toContainText("新建");

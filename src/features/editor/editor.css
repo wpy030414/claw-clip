@@ -24,7 +24,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 56px;
+  height: var(--topbar-height);
   padding: 0 12px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
@@ -345,91 +345,10 @@
   backdrop-filter: blur(2px);
 }
 
-/* ---------------- 打印主题面板 ---------------- */
-
-.theme-panel {
-  flex-shrink: 0;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-}
-
-.theme-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 0.86rem;
-}
-
-.theme-panel-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.theme-panel-header button {
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--md-sys-color-primary);
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 3px 10px;
-  cursor: pointer;
-}
-
-.theme-panel textarea {
-  width: 100%;
-  min-height: 120px;
-  max-height: 32vh;
-  resize: vertical;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface);
-  color: var(--md-sys-color-on-surface);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82rem;
-  line-height: 1.6;
-  outline: none;
-}
-
-/* ---------------- 打印根 ---------------- */
-
-#print-root {
-  position: absolute;
-  left: -10000px;
-  top: 0;
-  width: 820px;
-  pointer-events: none;
-}
-
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  #print-root,
-  #print-root * {
-    visibility: visible;
-  }
-  #print-root {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: auto;
-    pointer-events: auto;
-  }
-  @page {
-    margin: 18mm;
-  }
-}
-
 /* ---------------- 窄屏 ---------------- */
 
 @media (max-width: 899px) {
   .editor-topbar {
-    height: 52px;
     padding: 0 8px;
     gap: 4px;
   }

@@ -12,7 +12,9 @@ import {
   EditorView,
   drawSelection,
   dropCursor,
+  highlightActiveLineGutter,
   keymap,
+  lineNumbers,
   placeholder,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -98,7 +100,28 @@ function themeExtension(fontSize: number) {
     },
     ".cm-cursor": { borderLeftColor: "var(--md-sys-color-primary)" },
     "&.cm-focused": { outline: "none" },
-    ".cm-gutters": { display: "none" },
+    ".cm-gutters": {
+      backgroundColor: "transparent",
+      border: "none",
+      color: "var(--md-sys-color-on-surface-variant)",
+      fontSize: "0.78em",
+    },
+    // flex 居中：gutter 元素被 CodeMirror 固定为整行高，纯文本会贴顶显得偏上
+    ".cm-lineNumbers .cm-gutterElement": {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      minWidth: "34px",
+      padding: "0 10px 0 14px",
+      opacity: "0.65",
+    },
+    // 光标所在行：深色 + 加粗 + 完全不透明，便于定位
+    ".cm-lineNumbers .cm-gutterElement.cm-activeLineGutter": {
+      backgroundColor: "transparent",
+      color: "var(--md-sys-color-on-surface)",
+      opacity: "1",
+      fontWeight: "600",
+    },
   });
 }
 
@@ -129,6 +152,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
           drawSelection(),
           dropCursor(),
           highlightSelectionMatches(),
+          lineNumbers(),
+          highlightActiveLineGutter(),
           EditorView.lineWrapping,
           markdown(),
           syntaxHighlighting(mdHighlight),
