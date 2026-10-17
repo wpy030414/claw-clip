@@ -12,8 +12,9 @@ const EDITOR = '[data-testid="md-editor"] .cm-content';
 test("S5 桌面：导航栏 + 分栏 + 新建/收藏筛选", async ({ page }) => {
   await page.goto("");
 
-  await expect(page.getByTestId("nav-rail")).toBeVisible();
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
   await expect(page.getByTestId("nav-bar")).toHaveCount(0);
+  await expect(page.getByTestId("tab-docs")).toBeVisible();
   await expect(page.getByTestId("note-list-pane")).toBeVisible();
   await expect(page.getByTestId("empty-state")).toBeVisible();
 
@@ -38,7 +39,7 @@ test("S5 移动：卡片流 → 全屏编辑器 → 返回列表", async ({ page
   await page.goto("");
 
   await expect(page.getByTestId("nav-bar")).toBeVisible();
-  await expect(page.getByTestId("nav-rail")).toHaveCount(0);
+  await expect(page.getByTestId("app-sidebar")).toHaveCount(0);
   await expect(page.getByTestId("note-list-empty")).toBeVisible();
 
   await page.getByTestId("btn-new").click();
@@ -84,4 +85,28 @@ test("S5 断点切换：desktop → mobile 不丢未落库输入", async ({ page
   await expect
     .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 10_000 })
     .toContain("断点切换保留内容ABC");
+});
+
+test("侧栏：大纲页签、收起与展开", async ({ page }) => {
+  await page.goto("");
+  await page.getByTestId("btn-new").click();
+  await page.waitForSelector(EDITOR, { timeout: 15_000 });
+  await page.locator(EDITOR).first().click();
+  await page.keyboard.insertText("# 一级标题\n\n## 二级标题\n\n正文");
+
+  await page.getByTestId("tab-outline").click();
+  const outline = page.getByTestId("outline-pane");
+  await expect(outline).toBeVisible();
+  await expect(outline.locator(".outline-item")).toHaveCount(2);
+  await expect(outline.locator(".outline-item").first()).toHaveText("一级标题");
+
+  // 点击大纲条目 → 光标跳到对应标题（顶栏字数不变，编辑器仍聚焦）
+  await outline.locator(".outline-item").nth(1).click();
+  await expect(page.locator(".cm-content")).toBeFocused();
+
+  // 收起 / 展开
+  await page.getByTestId("btn-sidebar-close").click();
+  await expect(page.getByTestId("app-sidebar")).toHaveCount(0);
+  await page.getByTestId("btn-sidebar-open").click();
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
 });

@@ -8,6 +8,17 @@ import type { NoteFilter } from "@/types/note";
 /** 列表页语义：决定列表过滤与标题（跨 /n/:id 保持）。 */
 export type ListMode = "notes" | "starred" | "search";
 
+/** 侧栏页签：文档树 / 当前文件大纲。 */
+export type SidebarTab = "docs" | "outline";
+
+/** 大纲条目（由编辑器实时派生）。 */
+export interface OutlineItem {
+  level: number;
+  text: string;
+  /** 标题在文档中的字符偏移。 */
+  pos: number;
+}
+
 /** 确认对话框请求（驱动 useConfirm + M3E dialog）。 */
 export interface ConfirmRequest {
   id: string;
@@ -32,6 +43,11 @@ interface UiState {
   listMode: ListMode;
   /** 当前选中文件夹；null = 全部笔记（不按文件夹过滤）。 */
   currentFolderId: string | null;
+  /** 桌面侧栏是否展开。 */
+  sidebarOpen: boolean;
+  sidebarTab: SidebarTab;
+  /** 当前笔记大纲（编辑器写入，侧栏消费）。 */
+  outline: OutlineItem[];
   commandPaletteOpen: boolean;
   /** 桌面大纲侧栏开关。 */
   tocOpen: boolean;
@@ -42,6 +58,9 @@ interface UiState {
   setFilter: (patch: Partial<NoteFilter>) => void;
   setListMode: (mode: ListMode) => void;
   setCurrentFolderId: (id: string | null) => void;
+  setSidebarOpen: (open: boolean) => void;
+  setSidebarTab: (tab: SidebarTab) => void;
+  setOutline: (items: OutlineItem[]) => void;
   resetFilter: () => void;
   setCommandPalette: (open: boolean) => void;
   toggleToc: () => void;
@@ -56,6 +75,9 @@ export const useUiStore = create<UiState>()((set, get) => ({
   filter: {},
   listMode: "notes",
   currentFolderId: null,
+  sidebarOpen: true,
+  sidebarTab: "docs",
+  outline: [],
   commandPaletteOpen: false,
   tocOpen: true,
   confirmQueue: [],
@@ -65,6 +87,9 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setFilter: (patch) => set({ filter: { ...get().filter, ...patch } }),
   setListMode: (mode) => set({ listMode: mode }),
   setCurrentFolderId: (id) => set({ currentFolderId: id }),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  setSidebarTab: (tab) => set({ sidebarTab: tab }),
+  setOutline: (items) => set({ outline: items }),
   resetFilter: () => set({ filter: {}, keyword: "" }),
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
   toggleToc: () => set({ tocOpen: !get().tocOpen }),

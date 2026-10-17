@@ -1,7 +1,7 @@
 # 架构文档（ARCHITECTURE）
 
 > 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、可配置印刷主题、MD/DOCX/PDF 互导。
-> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（渲染）+ Zustand + IndexedDB。
+> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑 + 轻量 IR）+ markdown-it（打印/导出渲染）+ Zustand + IndexedDB。
 >
 > 关键决策的「为什么」见 [DECISIONS.md](./DECISIONS.md)；本文件讲「是什么、怎么连」。
 
@@ -36,7 +36,7 @@
 ```
 用户输入 → CodeMirror 6 updateListener（docChanged）
   → useMarkdownSession.onChange
-  → throttle(leading+trailing, 600ms) → notesStore.saveActive
+  → debounce(700ms) → notesStore.saveActive
   → 重算派生字段（title/wordCount/excerpt/attachmentIds）
   → noteCache 同步更新（内存真相源）→ datasource.upsertNote → IndexedDB put（原地更新，不改 id）
 ```
@@ -85,10 +85,11 @@ Markdown 源码 → hydrateMarkdown(clawclip:// → object URL)
 
 | | 桌面工作台（≥900px） | 移动卡片流（<900px） |
 |---|---|---|
-| 导航 | `M3eNavRail`（左侧竖排） | `M3eNavBar`（底部横排） |
-| 主区 | `M3eSplitPane`（start=列表 / end=编辑器常驻） | 列表 or 全屏编辑器（有 noteId 则全屏） |
-| 列表 | `NoteList variant="compact"` + 文件夹树 | `NoteList variant="card"` + 文件夹树 |
-| 返回 | 无需（列表常驻） | `EditorPane onBack` 回列表 |
+| 导航 | **可收侧栏**（文档/大纲页签；不设 nav rail） | `M3eNavBar`（底部横排） |
+| 主区 | **单栏**：列表在侧栏，主区只放编辑器 | 列表 or 全屏编辑器（有 noteId 则全屏） |
+| 列表 | 侧栏内文件夹树 + `NoteList variant="compact"` | `NoteList variant="card"` + 文件夹树 |
+| 大纲 | 侧栏「大纲」页签 | 编辑器内（暂不提供） |
+| 返回 | 无需（侧栏常驻） | `EditorPane onBack` 回列表 |
 
 **共享**：`notesStore` / `uiStore.listMode` / `useMarkdownSession` / `MarkdownEditor` / `MarkdownPreview` / `datasource`。
 列表筛选（笔记/收藏/搜索 + 当前文件夹）由 `uiStore` 持有，**跨 `/n/:id` 保持**，返回列表不丢筛选。
@@ -113,10 +114,15 @@ settingsStore(scheme/seedColor/previewCss…)
 CodeMirror 6 是命令式 API，React 封装遵循：
 
 - **半受控**：`value` 只在挂载时进入 `EditorState.create({doc})`；切换笔记由父级 `key={noteId}` 重挂载。
+  载入完成前不渲染编辑器（`loadedId === noteId`），避免以空文档挂载后无法回灌。
 - **不回流**：`updateListener` 只向上通知，不把父级 state 再 dispatch 回文档（避免 CJK 组合输入乱序）。
-- **按需加载**：渲染管线（markdown-it/KaTeX/highlight.js）只在进入预览/打印时动态 import；
+- **轻量 IR**（`markdownIR.ts`）：浏览模式下用 CodeMirror 装饰隐藏非当前行的 `#`/`**`/链接等标记，
+  标题/引用/列表/图片/任务框直接渲染样式；光标进入某行即还原该行源码，**仍可直接写**。
+  未聚焦时整篇按浏览态呈现。切换模式用 `Compartment.reconfigure` 热切换，不重建文档、不丢撤销历史。
+- **按需加载**：markdown-it/KaTeX/highlight.js 仅在需要打印/导出 HTML 时动态 import；
   Mermaid、docx、mammoth、pdfjs 均为动态 import，不进入首屏。
 - **文件入口**：`paste`/`drop` 由 `EditorView.domEventHandlers` 拦截，交给上层存 blob 后插入引用。
+- **保存**：纯防抖 700ms，无手动保存入口；卸载/切笔记立即 flush 到 store（内存真相源）。
 
 ## 6. 存储
 
@@ -136,9 +142,9 @@ store 与 `notes.folderId` 索引。列表查询带请求序号，过滤条件�
 ## 7. 测试金字塔
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
-  文件夹 CRUD 与级联删除、DOCX 导出、导入分发、查询过滤/分页、自动保存与快捷键等。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base）：编辑/预览/自动保存/刷新持久化/
-  原地编辑 id 不变/附件闭环/双形态断点切换/文件夹/导入/导出 MD/DOCX/PDF/可配置预览主题。
+  文件夹 CRUD 与级联删除、DOCX 导出、导入分发、查询过滤/分页、自动保存与快捷键等（145 例）。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，23 例）：编辑/浏览 IR/自动保存/刷新持久化/
+  原地编辑 id 不变/附件闭环/双形态断点切换/侧栏大纲与收起/文件夹/导入/导出 MD/DOCX/PDF/打印主题。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`
   （打印根为 `md-preview-print`，避免重复）；确定性信号用 `expect.poll` / `waitForSelector`。
 
@@ -165,6 +171,8 @@ store 与 `notes.folderId` 索引。列表查询带请求序号，过滤条件�
 
 ## 10. 已知限制
 
+- **轻量 IR 覆盖常见语法**：标题/引用/列表/任务框/图片/粗斜体/删除线/高亮/行内代码/链接；
+  围栏代码块标记、嵌套强调、脚注等在浏览模式下仍以源码呈现（可切到编辑模式查看原文）。
 - **PDF 回导是启发式的**：只保证文字可编辑，不保证版式、表格、图片还原。
 - **DOCX 导出**覆盖常见块级结构（标题/段落/列表/表格/代码/图片），复杂样式（批注、目录域）不迁移。
 - **Mermaid 体积较大**（elk/cytoscape 按图类型切分为懒加载 chunk），首次渲染图表会有短暂延迟。

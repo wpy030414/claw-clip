@@ -2,15 +2,16 @@
  * useMarkdownSession：编辑会话（加载正文 + 节流自动保存 + 立即保存）。
  *
  * 与旧 Vditor 桥接层的区别：
+ * - 自动保存为纯 trailing 防抖，用户无需（也无法）手动接管
  * - 正文就是 Markdown 源码，**不做 hydrate/dehydrate 转换**（附件以 clawclip:// 存档，
  *   仅预览/导出时替换成 object URL），因此不存在「渲染态 URL 写进库」的问题。
  * - 卸载时立即把最新内容写回 store（内存真相源），布局切换/切笔记不会丢字。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotesStore } from "@/stores/notesStore";
-import { throttle } from "@/utils/throttle";
+import { debounce } from "@/utils/throttle";
 
-const AUTOSAVE_WAIT = 600;
+const AUTOSAVE_WAIT = 700;
 
 interface Result {
   value: string;
@@ -24,13 +25,15 @@ export function useMarkdownSession(noteId: string | null): Result {
   const saveActive = useNotesStore((s) => s.saveActive);
 
   const [value, setValue] = useState("");
-  const [loading, setLoading] = useState(false);
+  /** 已完成载入的笔记 id：只有它等于当前 noteId 才允许渲染编辑器。 */
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const latestRef = useRef("");
   /** 已成功载入的笔记 id：卸载时只把内容写回同一条笔记，避免串写。 */
   const loadedIdRef = useRef<string | null>(null);
 
+  // 纯防抖：连续输入期间不写库，停下来 700ms 才写一次；无手动保存入口
   const throttledSave = useRef(
-    throttle(() => {
+    debounce(() => {
       void saveActive({ content: latestRef.current });
     }, AUTOSAVE_WAIT),
   ).current;
@@ -38,10 +41,10 @@ export function useMarkdownSession(noteId: string | null): Result {
   useEffect(() => {
     if (!noteId) {
       setValue("");
+      setLoadedId(null);
       return;
     }
     let cancelled = false;
-    setLoading(true);
     void (async () => {
       await openNote(noteId);
       if (cancelled) return;
@@ -49,7 +52,7 @@ export function useMarkdownSession(noteId: string | null): Result {
       loadedIdRef.current = noteId;
       latestRef.current = content;
       setValue(content);
-      setLoading(false);
+      setLoadedId(noteId);
     })();
 
     return () => {
@@ -76,6 +79,11 @@ export function useMarkdownSession(noteId: string | null): Result {
     throttledSave.cancel();
     await saveActive({ content: latestRef.current });
   }, [throttledSave, saveActive]);
+
+  // ★ 由 noteId / loadedId 派生 loading，而不是命令式 setLoading：
+  //   openNote 命中缓存时两次 setState 可能被 React 合并，中间「loading=true」的渲染
+  //   会被跳过，导致编辑器以空文档挂载后永不回灌（半受控编辑器没有 value→doc 回流）。
+  const loading = noteId !== null && loadedId !== noteId;
 
   return { value, loading, onChange, saveNow };
 }

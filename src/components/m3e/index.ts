@@ -16,12 +16,8 @@ export { M3eIconButton } from "@m3e/react/icon-button";
 export { M3eFab } from "@m3e/react/fab";
 export { M3eIcon } from "@m3e/react/icon";
 
-// —— 导航（桌面 nav-rail / 移动 nav-bar）——
-export { M3eNavRail } from "@m3e/react/nav-rail";
+// —— 导航（移动端 nav-bar；桌面侧栏为自绘）——
 export { M3eNavBar, M3eNavItem } from "@m3e/react/nav-bar";
-
-// —— 布局容器 ——
-export { M3eSplitPane } from "@m3e/react/split-pane";
 
 // —— 反馈（命令式 API：M3eSnackbar.open）——
 export { M3eSnackbar } from "@m3e/react/snackbar";

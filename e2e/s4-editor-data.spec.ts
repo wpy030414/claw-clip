@@ -6,7 +6,6 @@ import { test, expect } from "@playwright/test";
  */
 
 const EDITOR = '[data-testid="md-editor"] .cm-content';
-const PREVIEW = '[data-testid="md-preview"]';
 
 async function newNote(page: any) {
   await page.goto("");
@@ -29,14 +28,16 @@ test("S4: 新建笔记 → 编辑器挂载（React19 StrictMode 幂等）", asyn
   expect(errors.filter((e) => !e.includes("favicon"))).toEqual([]);
 });
 
-test("S4: 输入 Markdown → 预览渲染（# 标题 → <h1>）", async ({ page }) => {
+test("S4: 输入 Markdown → 浏览模式渲染（# 标题隐藏标记）", async ({ page }) => {
   await newNote(page);
 
-  await page.keyboard.insertText("# 我的第一篇笔记");
-  await page.getByTestId("btn-mode").click();
+  await page.keyboard.insertText("# 我的第一篇笔记\n\n正文段落");
+  // 默认即浏览模式；光标移到末行，让标题行进入「非当前行」→ 显示渲染态
+  await page.keyboard.press("End");
 
-  const h1 = page.locator(`${PREVIEW} h1`).first();
+  const h1 = page.locator(".cm-line.cm-ir-h1").first();
   await expect(h1).toContainText("我的第一篇笔记", { timeout: 10_000 });
+  await expect(h1).not.toContainText("#");
 });
 
 test("S4: 自动保存 → 刷新页面内容仍在（IndexedDB 持久化）", async ({ page }) => {

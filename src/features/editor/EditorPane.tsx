@@ -1,12 +1,12 @@
 /**
- * EditorPane：编辑器面板（桌面右栏 / 移动全屏共用）。
+ * EditorPane：Typora 式单主区编辑器。
  *
- * 两种视图：
- * - 编辑：CodeMirror 6 源码编辑器（Markdown 语法高亮）
- * - 预览：markdown-it 渲染结果 + 可配置打印主题 CSS
+ * 顶栏：返回（移动端）/ 标题 / 自动保存态 / 字数 / 编辑⇄浏览 / 导出 / 附件 / 收藏 / 删除。
+ * - 编辑：完整 Markdown 源码（等宽）
+ * - 浏览：轻量 IR（隐藏非当前行的标记与语法，仍可直接写）
  *
- * 预览与打印共用同一份 HTML（useRenderedMarkdown），因此「预览所见 = 打印所得」。
- * 导出：MD（原文）、DOCX（HTML→docx）、PDF（浏览器打印 → 另存为 PDF）。
+ * 保存：纯防抖自动保存（700ms），**没有手动保存入口**；切笔记/卸载立即落库。
+ * 导出：MD、DOCX、打印（PDF）；打印根与导出共用 markdown-it 渲染结果。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { M3eIconButton } from "@/components/m3e";
@@ -17,80 +17,71 @@ import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useUiStore, type OutlineItem } from "@/stores/uiStore";
 import { composePreviewCss } from "@/features/preview/themes";
 import { saveBlob } from "@/data/blobStore";
-import {
-  downloadBlob,
-  downloadText,
-  htmlToDocx,
-  safeFilename,
-} from "@/data/exchange";
+import { downloadBlob, downloadText, htmlToDocx, safeFilename } from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
+import { setActiveEditor } from "./activeEditor";
 
 interface Props {
   noteId: string;
-  /** 移动端：返回按钮回调。桌面端不传（列表常驻）。 */
+  /** 移动端：返回按钮回调。桌面端不传（侧栏常驻）。 */
   onBack?: () => void;
   /** 删除后回调（离开已失效的 /n/:id 路由）。 */
   onDeleted?: () => void;
 }
 
 type SaveState = "idle" | "saving" | "saved";
+type ViewMode = "edit" | "browse";
 
 export function EditorPane({ noteId, onBack, onDeleted }: Props) {
-  const { value, loading, onChange, saveNow } = useMarkdownSession(noteId);
+  const { value, loading, onChange } = useMarkdownSession(noteId);
   const activeNote = useNotesStore((s) => s.activeNote);
   const toggleStar = useNotesStore((s) => s.toggleStar);
   const remove = useNotesStore((s) => s.remove);
   const previewCss = useSettingsStore((s) => s.previewCss);
   const setSetting = useSettingsStore((s) => s.set);
+  const setOutline = useUiStore((s) => s.setOutline);
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState(false);
+  const [mode, setMode] = useState<ViewMode>("browse");
   const [themePanel, setThemePanel] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [printRequested, setPrintRequested] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const wordCount = useMemo(() => countWords(value), [value]);
-  // 预览/打印才渲染 HTML（编辑器本身不需要 markdown-it，首屏更轻）
-  const { html, ready: htmlReady } = useRenderedMarkdown(value, preview || printRequested);
+  const { html, ready: htmlReady } = useRenderedMarkdown(value);
   const css = useMemo(() => composePreviewCss(previewCss), [previewCss]);
   const title = activeNote?.title ?? "无标题";
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const markDirty = useCallback(() => {
-    setSaveState("saving");
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => setSaveState("saved"), 900);
-  }, []);
-
   const handleChange = useCallback(
     (next: string) => {
       onChange(next);
-      markDirty();
+      setSaveState("saving");
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => setSaveState("saved"), 800);
     },
-    [onChange, markDirty],
+    [onChange],
   );
 
-  // Cmd/Ctrl+S：立即保存
+  // 大纲：从正文实时派生（文档树之外的第二页签）
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        void saveNow().then(() => {
-          setSaveState("saved");
-          toastSuccess("已保存");
-        });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [saveNow]);
+    const items: OutlineItem[] = [];
+    const re = /^(#{1,6})\s+(.+?)\s*#*\s*$/gm;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(value))) {
+      items.push({ level: m[1].length, text: m[2].trim(), pos: m.index });
+    }
+    setOutline(items);
+    return () => setOutline([]);
+  }, [value, setOutline]);
 
-  // 切笔记时重置状态
+  // 切笔记重置局部状态
   useEffect(() => {
     setSaveState("idle");
     setExportOpen(false);
@@ -116,13 +107,16 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
           : `[${file.name || "附件"}](${ref})`;
         editorRef.current?.insertText(`\n${md}\n`);
       }
-      markDirty();
     },
-    [noteId, markDirty],
+    [noteId],
   );
 
-  const handleExport = async (kind: "md" | "docx" | "pdf") => {
+  const handleExport = async (kind: "md" | "docx" | "pdf" | "theme") => {
     setExportOpen(false);
+    if (kind === "theme") {
+      setThemePanel((v) => !v);
+      return;
+    }
     try {
       if (kind === "md") {
         downloadText(safeFilename(title, "md"), value);
@@ -135,7 +129,6 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         toastSuccess("已导出 DOCX");
         return;
       }
-      // PDF：切到预览渲染 → 调起系统打印 → 用户选择「另存为 PDF」
       toastInfo("在打印对话框中选择「另存为 PDF」");
       setPrintRequested(true);
     } catch (e) {
@@ -143,9 +136,9 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     }
   };
 
-  // 打印：等 HTML 渲染完成后再调起系统打印对话框
+  // 打印：等 HTML 渲染就绪后再调系统打印
   useEffect(() => {
-    if (!printRequested || !htmlReady) return; // 等 HTML 渲染完成（空文档也算完成）
+    if (!printRequested || !htmlReady) return;
     const timer = setTimeout(() => {
       const prevTitle = document.title;
       document.title = title;
@@ -159,7 +152,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   }, [printRequested, htmlReady, title]);
 
   const saveLabel =
-    saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : "已就绪";
+    saveState === "saving" ? "自动保存中…" : saveState === "saved" ? "已保存" : "已就绪";
 
   return (
     <div className="editor-pane" data-testid="editor-pane">
@@ -182,36 +175,15 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         </span>
 
         <M3eIconButton
-          data-testid="btn-save"
-          aria-label="立即保存"
-          onClick={() =>
-            void saveNow().then(() => {
-              setSaveState("saved");
-              toastSuccess("已保存");
-            })
-          }
-        >
-          <span className="material-symbols-outlined">save</span>
-        </M3eIconButton>
-
-        <M3eIconButton
           data-testid="btn-mode"
-          aria-label={preview ? "切换到编辑" : "切换到预览"}
-          data-mode={preview ? "preview" : "edit"}
-          onClick={() => setPreview((v) => !v)}
+          aria-label={mode === "browse" ? "切换到源码编辑" : "切换到浏览模式"}
+          data-mode={mode}
+          onClick={() => setMode((m) => (m === "browse" ? "edit" : "browse"))}
         >
-          <span className="material-symbols-outlined">{preview ? "edit" : "visibility"}</span>
+          <span className="material-symbols-outlined">
+            {mode === "browse" ? "code" : "visibility"}
+          </span>
         </M3eIconButton>
-
-        {preview && (
-          <M3eIconButton
-            data-testid="btn-theme"
-            aria-label="打印主题"
-            onClick={() => setThemePanel((v) => !v)}
-          >
-            <span className="material-symbols-outlined">palette</span>
-          </M3eIconButton>
-        )}
 
         <div className="editor-export">
           <M3eIconButton
@@ -231,6 +203,9 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
               </button>
               <button type="button" role="menuitem" data-testid="export-pdf" onClick={() => void handleExport("pdf")}>
                 打印 / PDF
+              </button>
+              <button type="button" role="menuitem" data-testid="export-theme" onClick={() => void handleExport("theme")}>
+                打印主题…
               </button>
             </div>
           )}
@@ -272,7 +247,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         </M3eIconButton>
       </div>
 
-      {preview && themePanel && (
+      {themePanel && (
         <div className="theme-panel" data-testid="theme-panel">
           <div className="theme-panel-header">
             <strong>打印主题 CSS</strong>
@@ -290,19 +265,20 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         </div>
       )}
 
-      <div className={`editor-canvas ${preview ? "editor-canvas--preview" : ""}`}>
-        {preview ? (
-          <MarkdownPreview html={html} css={css} />
-        ) : (
-          !loading && (
-            <MarkdownEditor
-              key={noteId}
-              ref={editorRef}
-              value={value}
-              onChange={handleChange}
-              onFiles={(files) => void insertFiles(files)}
-            />
-          )
+      <div className="editor-canvas">
+        {!loading && (
+          <MarkdownEditor
+            key={noteId}
+            ref={(handle) => {
+              // 载入完成前编辑器不挂载，用回调 ref 保证句柄在真正挂载时注册（供大纲跳转）
+              editorRef.current = handle;
+              setActiveEditor(handle);
+            }}
+            value={value}
+            onChange={handleChange}
+            onFiles={(files) => void insertFiles(files)}
+            ir={mode === "browse"}
+          />
         )}
         {loading && (
           <div className="editor-loading-overlay" data-testid="editor-loading">
@@ -312,7 +288,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
       </div>
 
       {/* 打印根：屏幕上移出视口，@media print 时占据整页 */}
-      {(preview || printRequested) && (
+      {(printRequested || themePanel) && (
         <div id="print-root">
           <MarkdownPreview html={html} css={css} testId="md-preview-print" />
         </div>

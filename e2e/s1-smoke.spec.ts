@@ -53,14 +53,14 @@ test("S1: Snackbar 命令式 API 可用（Cmd+S 保存触发）", async ({ page 
   await page.goto("/");
   await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
 
-  // 新建笔记 → 进入编辑器 → Cmd+S 保存触发 toastSuccess
-  await page.getByTestId("btn-new").click();
-  await page.waitForSelector('[data-testid="md-editor"] .cm-content', { timeout: 15_000 });
-  await page.locator('[data-testid="md-editor"] .cm-content').first().click();
-  await page.keyboard.insertText("测试内容");
-  await page.keyboard.press("Control+s"); // Cmd+S 保存
+  // 导入文件会触发 Snackbar（自动保存已无手动入口）
+  await page.getByTestId("import-input").setInputFiles({
+    name: "冒烟.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 冒烟\n\n内容", "utf-8"),
+  });
 
-  await expect(page.locator("m3e-snackbar")).toBeAttached({ timeout: 3_000 });
+  await expect(page.locator("m3e-snackbar")).toBeAttached({ timeout: 5_000 });
 });
 
 test("S1: 明暗模式跟随系统（scheme=auto）", async ({ page }) => {

@@ -204,3 +204,92 @@
     margin: 18mm;
   }
 }
+
+/* ---------------- 轻量 IR（浏览模式） ---------------- */
+
+.md-editor-host--source .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
+}
+
+.md-editor-host--browse .cm-scroller {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC",
+    "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+  font-size: 1.05em;
+}
+
+.md-editor-host .cm-content {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.md-editor-host--source .cm-content {
+  max-width: none;
+}
+
+.cm-line.cm-ir-h1 {
+  font-size: 1.9em;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0.5em 0 0.2em;
+}
+.cm-line.cm-ir-h2 {
+  font-size: 1.52em;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0.45em 0 0.15em;
+}
+.cm-line.cm-ir-h3 {
+  font-size: 1.26em;
+  font-weight: 700;
+  margin: 0.35em 0 0.1em;
+}
+.cm-line.cm-ir-h4 { font-size: 1.1em; font-weight: 700; }
+.cm-line.cm-ir-h5, .cm-line.cm-ir-h6 { font-size: 1em; font-weight: 700; }
+
+.cm-line.cm-ir-quote {
+  border-left: 3px solid var(--md-sys-color-primary, #6750a4);
+  padding-left: 12px;
+  color: var(--md-sys-color-on-surface-variant, #49454f);
+  font-style: italic;
+}
+
+.cm-line.cm-ir-list { padding-left: 4px; }
+
+.cm-ir-bullet {
+  color: var(--md-sys-color-primary, #6750a4);
+  padding: 0 8px 0 2px;
+  font-weight: 700;
+}
+
+.cm-ir-task {
+  vertical-align: middle;
+  margin-right: 8px;
+  accent-color: var(--md-sys-color-primary, #6750a4);
+}
+
+.cm-ir-image {
+  display: block;
+  max-width: 100%;
+  max-height: 460px;
+  margin: 10px 0;
+  border-radius: 8px;
+}
+
+.cm-ir-strong { font-weight: 700; }
+.cm-ir-em { font-style: italic; }
+.cm-ir-strike { text-decoration: line-through; opacity: 0.75; }
+.cm-ir-mark {
+  background: var(--md-sys-color-tertiary-container, #ffd8e4);
+  border-radius: 3px;
+}
+.cm-ir-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--md-sys-color-surface-container-high, #ece6f0);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.cm-ir-link {
+  color: var(--md-sys-color-primary, #6750a4);
+  text-decoration: underline;
+}
