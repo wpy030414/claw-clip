@@ -1,0 +1,5 @@
+# pnpm 12 在 CI 中默认把「未审批的依赖构建脚本」视为错误（ERR_PNPM_IGNORED_BUILDS）。
+# core-js 由 jspdf 的 optionalDependencies 引入，其 postinstall 只打印捐赠提示，
+# 不需要执行；这里显式拒绝，避免 `pnpm install --frozen-lockfile` 在 Actions 失败。
+allowBuilds:
+  core-js: false
