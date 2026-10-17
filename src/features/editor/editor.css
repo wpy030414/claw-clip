@@ -3,7 +3,7 @@
  * 颜色全部消费 M3E --md-sys-color-* token，明暗自动跟随。
  *
  * 布局：
- *   topbar（标题 / 视图切换 / 收藏 / 更多）
+ *   topbar（标题 / 视图切换 / 更多）
  *   toolbar（格式命令）
  *   workspace（左源码 · 右实时预览，按 data-view 切换）
  */
@@ -29,6 +29,11 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface);
+}
+
+/* 桌面：给主区左上角的侧栏开关让出位置 */
+.app-shell--desktop .editor-topbar {
+  padding-left: 54px;
 }
 
 .editor-title-block {
@@ -85,10 +90,6 @@
 
 .editor-icon-btn .material-symbols-outlined {
   font-size: 21px;
-}
-
-.editor-icon-btn[data-starred="true"] {
-  color: var(--md-sys-color-primary);
 }
 
 /* 视图切换分段控件 */

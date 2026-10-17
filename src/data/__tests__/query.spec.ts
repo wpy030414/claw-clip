@@ -9,12 +9,12 @@ import { makeNote } from "@/test/factories";
 const ds = new LocalDataSource();
 
 async function seed() {
-  // 造 5 条笔记，updatedAt 递增，含不同 tags/starred
-  await ds.upsertNote(makeNote({ id: "n1", title: "苹果派食谱", content: "面粉 苹果 糖", tags: ["美食"], starred: true, updatedAt: 100, createdAt: 100 }));
-  await ds.upsertNote(makeNote({ id: "n2", title: "React 笔记", content: "hooks effect state", tags: ["编程", "前端"], starred: false, updatedAt: 200, createdAt: 150 }));
-  await ds.upsertNote(makeNote({ id: "n3", title: "读书摘录", content: "人生若只如初见", tags: ["读书"], starred: true, updatedAt: 300, createdAt: 300 }));
-  await ds.upsertNote(makeNote({ id: "n4", title: "前端框架对比", content: "React Vue Svelte", tags: ["编程", "前端"], starred: false, updatedAt: 400, createdAt: 200 }));
-  await ds.upsertNote(makeNote({ id: "n5", title: "购物清单", content: "牛奶 面包 苹果", tags: ["生活"], starred: false, updatedAt: 500, createdAt: 500 }));
+  // 造 5 条笔记，updatedAt 递增，含不同 tags
+  await ds.upsertNote(makeNote({ id: "n1", title: "苹果派食谱", content: "面粉 苹果 糖", tags: ["美食"], updatedAt: 100, createdAt: 100 }));
+  await ds.upsertNote(makeNote({ id: "n2", title: "React 笔记", content: "hooks effect state", tags: ["编程", "前端"], updatedAt: 200, createdAt: 150 }));
+  await ds.upsertNote(makeNote({ id: "n3", title: "读书摘录", content: "人生若只如初见", tags: ["读书"], updatedAt: 300, createdAt: 300 }));
+  await ds.upsertNote(makeNote({ id: "n4", title: "前端框架对比", content: "React Vue Svelte", tags: ["编程", "前端"], updatedAt: 400, createdAt: 200 }));
+  await ds.upsertNote(makeNote({ id: "n5", title: "购物清单", content: "牛奶 面包 苹果", tags: ["生活"], updatedAt: 500, createdAt: 500 }));
 }
 
 beforeEach(async () => {
@@ -62,12 +62,6 @@ describe("queryNotes 过滤", () => {
     expect(r.items).toHaveLength(0);
   });
 
-  it("starred 过滤", async () => {
-    const r = await queryNotes({ starred: true }, 100, 0);
-    expect(r.total).toBe(2);
-    expect(r.items.every((i) => i.starred)).toBe(true);
-  });
-
   it("tags AND 语义（同时含多标签）", async () => {
     const r = await queryNotes({ tags: ["编程", "前端"] }, 100, 0);
     expect(r.total).toBe(2); // n2, n4
@@ -80,9 +74,9 @@ describe("queryNotes 过滤", () => {
     expect(r.items[0].id).toBe("n3");
   });
 
-  it("多条件组合（starred + keyword）", async () => {
-    const r = await queryNotes({ starred: true, keyword: "苹果" }, 100, 0);
-    expect(r.total).toBe(1); // n1（收藏且含苹果）
+  it("多条件组合（tags + keyword）", async () => {
+    const r = await queryNotes({ tags: ["美食"], keyword: "苹果" }, 100, 0);
+    expect(r.total).toBe(1); // n1（美食标签且含苹果）
     expect(r.items[0].id).toBe("n1");
   });
 });

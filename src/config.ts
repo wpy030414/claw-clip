@@ -9,9 +9,12 @@ export const globalConfig = {
     en: "ClawClip",
   },
 
-  /** IndexedDB 库名。v2 与旧库 "ClawClip" 物理隔离，不写迁移、不动旧数据。 */
+  /** 项目主页（侧栏 GitHub 图标跳转）。 */
+  projectUrl: "https://github.com/wpy030414/claw-clip",
+
+  /** IndexedDB 库名（与旧库 "ClawClip" 物理隔离）；schema 版本单独递增，当前 v3。 */
   dbName: "claw-clip-v2",
-  dbVersion: 2,
+  dbVersion: 3,
 
   /** true=本地 IndexedDB；false=远程数据源（占位，未实现具体服务）。 */
   enableStoringLocally: true,

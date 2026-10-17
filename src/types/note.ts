@@ -3,7 +3,6 @@
  *
  * 对旧 Blog 模型的关键修正：
  * - id 用 UUID（非时间戳），编辑原地更新永不改 id（修正旧「编辑=删旧建新」bug）
- * - starred 内联为字段（不再独立 stars 表）
  * - wordCount/excerpt 冗余存储，列表页只读轻量投影 NoteSummary，content 不进内存
  * - attachmentIds 反向索引，供删除级联 & 导出打包
  */
@@ -13,7 +12,6 @@ export interface Note {
   title: string;
   /** Markdown GFM 正文（附件用 clawclip://blob/<id> 引用） */
   content: string;
-  starred: boolean;
   tags: string[];
   createdAt: number;
   updatedAt: number;
@@ -36,7 +34,6 @@ export type NoteSummary = Pick<
   | "title"
   | "excerpt"
   | "wordCount"
-  | "starred"
   | "tags"
   | "updatedAt"
   | "createdAt"
@@ -49,7 +46,6 @@ export type NoteSort = "updated" | "created" | "title";
 export interface NoteFilter {
   /** 搜 title + content + tags */
   keyword?: string;
-  starred?: boolean;
   /** AND 语义：需同时含所有指定标签 */
   tags?: string[];
   /** 文件夹过滤：undefined=全部；null=根目录；string=指定文件夹 */
@@ -63,7 +59,6 @@ export function emptyNote(now = Date.now(), folderId: string | null = null): Not
     id: crypto.randomUUID(),
     title: "无标题",
     content: "",
-    starred: false,
     tags: [],
     createdAt: now,
     updatedAt: now,
@@ -82,7 +77,6 @@ export function toSummary(n: Note): NoteSummary {
     title: n.title,
     excerpt: n.excerpt,
     wordCount: n.wordCount,
-    starred: n.starred,
     tags: n.tags,
     updatedAt: n.updatedAt,
     createdAt: n.createdAt,

@@ -15,6 +15,7 @@ const PNG = Buffer.from(
 async function newNote(page: any) {
   await page.goto("");
   await page.getByTestId("btn-new").click();
+  await page.getByTestId("create-note").click();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
   await page.locator(EDITOR).first().click();
 }

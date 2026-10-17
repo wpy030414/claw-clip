@@ -3,7 +3,7 @@
  *
  * 库名 `claw-clip-v2`，与旧库 `ClawClip` 物理隔离（不写迁移，见方案 §5.3）。
  * 三个 store：
- * - `notes`（keyPath=id，索引 updatedAt/starred/createdAt/tags(multiEntry)/folderId）
+ * - `notes`（keyPath=id，索引 updatedAt/createdAt/tags(multiEntry)/folderId）
  * - `folders`（keyPath=id，索引 parentId/updatedAt；文件夹树）
  * - `blobs`（keyPath=id，索引 noteId/mime）
  * - `meta` （keyPath=key，存 schemaVersion/lastBackupAt 等杂项）
@@ -27,7 +27,6 @@ export function openDB(): Promise<IDBDatabase> {
             keyPath: "id",
           });
           notes.createIndex("updatedAt", "updatedAt");
-          notes.createIndex("starred", "starred");
           notes.createIndex("createdAt", "createdAt");
           notes.createIndex("tags", "tags", { multiEntry: true });
         } else if (req.transaction) {
@@ -36,6 +35,10 @@ export function openDB(): Promise<IDBDatabase> {
         // v1→v2：笔记归属文件夹（旧笔记 folderId 缺失视为根目录）
         if (notes && !notes.indexNames.contains("folderId")) {
           notes.createIndex("folderId", "folderId");
+        }
+        // v2→v3：取消「收藏」概念，清掉遗留索引（数据字段本身无需迁移）
+        if (notes && notes.indexNames.contains("starred")) {
+          notes.deleteIndex("starred");
         }
         if (!db.objectStoreNames.contains(globalConfig.storeNames.folders)) {
           const folders = db.createObjectStore(globalConfig.storeNames.folders, {

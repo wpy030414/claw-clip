@@ -13,7 +13,7 @@ export function useImportDocument(): (file: File) => Promise<void> {
   const navigate = useNavigate();
   const createNote = useNotesStore((s) => s.createNote);
   const openNote = useNotesStore((s) => s.openNote);
-  const saveActive = useNotesStore((s) => s.saveActive);
+  const saveNote = useNotesStore((s) => s.saveNote);
   const currentFolderId = useUiStore((s) => s.currentFolderId);
 
   return useCallback(
@@ -23,13 +23,13 @@ export function useImportDocument(): (file: File) => Promise<void> {
         const doc = await importDocument(file);
         const id = await createNote(currentFolderId);
         await openNote(id);
-        await saveActive({ content: doc.content, title: doc.title });
+        await saveNote(id, { content: doc.content, title: doc.title });
         navigate(`/n/${id}`);
         toastSuccess(`已导入「${doc.title}」`);
       } catch (e) {
         toastError(`导入失败：${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [navigate, createNote, openNote, saveActive, currentFolderId],
+    [navigate, createNote, openNote, saveNote, currentFolderId],
   );
 }

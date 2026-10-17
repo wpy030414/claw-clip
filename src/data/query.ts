@@ -35,9 +35,6 @@ export async function queryNotes(
         n.tags.some((t) => t.toLowerCase().includes(kw)),
     );
   }
-  if (filter.starred !== undefined) {
-    notes = notes.filter((n) => n.starred === filter.starred);
-  }
   if (filter.tags && filter.tags.length > 0) {
     // AND 语义：需同时含所有指定标签
     notes = notes.filter((n) => filter.tags!.every((t) => n.tags.includes(t)));

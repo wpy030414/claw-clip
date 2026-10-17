@@ -1,6 +1,6 @@
 /**
  * 响应式断点 hook：监听 media query，返回是否匹配。
- * 用于 AppShell 在桌面工作台 / 移动卡片流两套布局间切换（方案 §5.6）。
+ * 用于 AppShell 在桌面工作台 / 移动端两套布局间切换（方案 §5.6）。
  */
 import { useEffect, useState } from "react";
 

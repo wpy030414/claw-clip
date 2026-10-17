@@ -11,7 +11,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  pages/         路由薄壳（Notes/Starred/Search/Editor…）      │  ← react-router data router
+│  pages/         路由薄壳（Notes/Editor）                      │  ← react-router data router
 ├─────────────────────────────────────────────────────────────┤
 │  layouts/       响应式双形态外壳（AppShell→Desktop/Mobile）    │  ← 断点分派，只组合不写业务
 ├─────────────────────────────────────────────────────────────┤
@@ -87,16 +87,48 @@ Markdown 源码 → debounce(120ms) → hydrateMarkdown(clawclip:// → object U
 
 单一 data router，`/n/:noteId` 表达「选中笔记」。`AppShell` 用 `useIsDesktop()`（`(min-width:900px)`）分派：
 
-| | 桌面工作台（≥900px） | 移动卡片流（<900px） |
+| | 桌面工作台（≥900px） | 移动端（<900px） |
 |---|---|---|
-| 导航 | **可收侧栏**（文档/大纲页签；不设 nav rail） | `M3eNavBar`（底部横排） |
-| 主区 | **编辑工作区**：编辑 / 分屏 / 预览三态；默认分屏 | 列表 or 全屏编辑器（有 noteId 则全屏）；split 退化为编辑 |
-| 列表 | 侧栏内文件夹树 + `NoteList variant="compact"` | `NoteList variant="card"` + 文件夹树 |
+| 导航 | **可收侧栏**：品牌行 → 等宽页签 → 行级「新建」→ 文件夹/笔记树 | 无导航栏（仅笔记一个目的地） |
+| 主区 | **编辑工作区**：编辑 / 分屏 / 预览三态；默认分屏 | 笔记树 or 全屏编辑器（有 noteId 则全屏）；split 退化为编辑 |
+| 列表 | 侧栏内**文件夹 + 笔记统一树**（`NoteTree`） | 同一棵 `NoteTree` |
 | 大纲 | 侧栏「大纲」页签 | 编辑器内（暂不提供） |
 | 返回 | 无需（侧栏常驻） | `EditorPane onBack` 回列表 |
 
-**共享**：`notesStore` / `uiStore.listMode` / `useMarkdownSession` / `MarkdownEditor` / `MarkdownPreview` / `datasource`。
-列表筛选（笔记/收藏/搜索 + 当前文件夹）由 `uiStore` 持有，**跨 `/n/:id` 保持**，返回列表不丢筛选。
+**侧栏开关**：`DesktopLayout` 在主内容左上角渲染一个 `main-sidebar-toggle`
+（`data-testid` 随状态切换 `btn-sidebar-close` / `btn-sidebar-open`）；
+`Sidebar` 自身只在打开时渲染，不再内置收起按钮。顶部品牌行由三部分组成：左侧网站
+logo（`public/favicon.ico`，24px；暗色主题用 `filter: invert(1)` 反相）、等宽字体的
+`ClawClip` 标题、右侧 GitHub 图标（外链 `globalConfig.projectUrl`）。
+
+**侧栏底部 bar**：`Sidebar` 在内容下方渲染 `.sidebar-footer`：左侧 `SidebarStats` 统计胶囊
+（数据库图标 + 「共 x 个笔记 · xxx KB/MB/GB」），右侧 34px 方形明暗切换按钮。
+`SidebarStats` 订阅 `notesStore.revision`，400ms 防抖后调用 `data/stats.getDbStats()`：
+读取 notes/folders/blobs/meta 四个 store，文本记录按 JSON 的 UTF-8 字节数估算、blob 用其
+`size`。`revision` 在笔记/文件夹 CRUD、导入、重置后递增，保证统计随数据变化刷新。
+主题按钮读取 `settingsStore.resolvedScheme`，点击调用 `toggleScheme()`。
+
+**笔记树行**：`NoteTree` 把「新建」行放进滚动容器作为首项，并用
+`position: sticky; top: 0` 吸顶（背景与面板一致，内容不会透出）。每条笔记行是两行结构：
+标题 + `relativeTime(updatedAt)`，下一行是 `NoteSummary.excerpt`（stripMarkdown 后单行、
+80 字上限，CSS 再省略到一行）。同一层级内按 `updatedAt` 倒序；`saveNote` 会先比对
+content/title/tags/folderId/pinned，**未发生变化时直接返回**，因此打开/关闭笔记不会刷新
+`updatedAt`、也不会打乱排序。
+
+**文件夹与拖拽**：文件夹不允许嵌套，`NoteTree` 只渲染根级文件夹（`loadFolders` 会把历史
+`parentId` 归一化为 null 并落库）。文件夹行没有展开箭头，点击整行切换开合，`folder`/
+`folder_open` 图标表达状态；展开即选为新建位置，重命名只通过悬停后的编辑按钮触发。
+笔记行原生 `draggable`：拖到文件夹行 → `saveNote(id,{folderId})` 并自动展开；拖到树空白处
+（`.note-tree-body` 自身）→ `folderId:null`。拖动已嵌套笔记时，侧栏底部浮出「移到顶层」拖放条
+（绝对定位，不挤动列表），目标文件夹与空白区分别用 `data-drop-target` / `data-drop-root` 高亮。
+
+文件夹本身也可 `draggable`：拖到另一文件夹行的上半/下半区，按指针位置插到其前/后
+（`data-drop-position` 画插入线）；`reorderFolders()` 重排内存数组、压成连续 `order` 并回写
+IndexedDB。`createFolder()` 追加到末尾，`loadFolders()` 为旧数据补齐 `order`。
+
+**共享**：`notesStore` / `uiStore.currentFolderId` / `useMarkdownSession` / `MarkdownEditor` / `MarkdownPreview` / `datasource`。
+当前选中文件夹由 `uiStore` 持有，**跨 `/n/:id` 保持**；它同时决定「新建」的归属位置。
+点击文件夹行开合并选中它；收起当前选中的文件夹时，新建位置回到顶层。
 
 ## 4. 主题与印刷
 
@@ -136,25 +168,30 @@ CodeMirror 6 是命令式 API，React 封装遵循：
 
 ## 6. 存储
 
-IndexedDB `claw-clip-v2`（v2，与旧库物理隔离）：
+IndexedDB `claw-clip-v2`（v3，与旧库物理隔离）：
 
 | store | keyPath | 索引 | 内容 |
 |---|---|---|---|
-| `notes` | id | updatedAt/starred/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId） |
-| `folders` | id | parentId/updatedAt | 文件夹（扁平存储，UI 递归组树） |
+| `notes` | id | updatedAt/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId） |
+| `folders` | id | parentId/updatedAt | 文件夹（扁平存储 + `order` 手动排序） |
 | `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer） |
 | `meta` | key | — | schemaVersion 等 |
 
 `datasource.ts` 门面按 `enableStoringLocally` 切 Local/Remote（占位）。`db.ts` 提供
 `openDB()` Promise 单例 + `withTx()` + `__resetDbSingleton()`；v1→v2 升级会补建 `folders`
-store 与 `notes.folderId` 索引。列表查询带请求序号，过滤条件快速切换时丢弃过期响应。
+store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引。侧栏笔记树通过
+`listAllNotes()` 一次性取全量投影，CRUD 时增量同步；`listNotes()`/`query.ts` 的分页查询
+仍保留在数据层（供单测与将来复用），当前 UI 不再使用。`loadFolders()` 会把历史嵌套文件夹
+（非 null `parentId`）提升为根级并回写，保证「文件夹不嵌套」在数据层也成立。
 
 ## 7. 测试金字塔
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
-  文件夹 CRUD 与级联删除、DOCX 导出、导入分发、查询过滤/分页、自动保存与快捷键等（161 例）。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，27 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
-  自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏大纲与收起/文件夹/导入/导出 MD/HTML/DOCX/PDF/打印主题。
+  文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
+  自动保存与快捷键等（165 例）。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，33 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
+  文件夹折叠/上传导入/导出 MD/HTML/DOCX/PDF/打印主题。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`
   （打印根为 `md-preview-print`，避免重复）；确定性信号用 `expect.poll` / `waitForSelector`。
 

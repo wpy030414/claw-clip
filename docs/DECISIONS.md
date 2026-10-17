@@ -72,8 +72,7 @@
 
 **Note v2 关键设计**（对初稿的纠正）：
 - `id: string`（UUID）——不再用时间戳当 id。
-- **编辑原地更新（`put`），永不改 id**——根除旧「编辑=删旧建新 + 收藏手动搬运」的语义 bug（旧 `edited.ts` 实测确认）。
-- `starred` **内联字段**，不再单开 stars 表。
+- **编辑原地更新（`put`），永不改 id**——根除旧「编辑=删旧建新」的语义 bug（旧 `edited.ts` 实测确认）。
 - 加 `wordCount`/`excerpt` **冗余字段** + 列表投影 `NoteSummary`——列表页不读 content，避免旧版「整条 Blog（含内联图片 ArrayBuffer）全进内存」的性能问题（对应旧 commit "optimize performance of loading media"）。
 - 加 `attachmentIds` 反向索引——删除级联 & 导出打包用。
 - `title` 显式存储、`deriveTitle` 回填（首行 H1/前 30 字），非纯派生。
@@ -256,7 +255,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 - `folders` 独立 object store（`id/name/parentId/timestamps`），扁平存储，UI 递归组树。
 - `notes.folderId?: string | null`；`null`/缺失 = 根目录。旧笔记升级后自然落入根目录，无需迁移脚本。
 - 删除文件夹为**级联删除**（子孙文件夹 + 其下笔记 + 附件），UI 二次确认。
-- 列表筛选把 `folderId` 并入 `NoteFilter`，与 keyword/starred/tags 组合。
+- 列表筛选把 `folderId` 并入 `NoteFilter`，与 keyword/tags 组合；“收藏”概念已于 ADR-023 移除。
 
 **为什么不用嵌套 JSON 树**：IndexedDB 查询/增量更新/单文件夹重命名都更简单；树深很浅，递归组树成本可忽略。
 
@@ -329,7 +328,7 @@ _（后续 ADR 随 S10 验收与性能优化补充：体积预算、命令面板
 - **格式工具栏**：标题 H1–H3、粗体、斜体、删除线、行内代码、引用、无序/有序/任务列表、
   代码块、链接、图片、表格、行内/块级公式、分隔线。命令实现为纯函数
   （`markdownCommands.ts`），工具栏与编辑器解耦，可直接单测。
-- **顶栏收敛**：标题与保存状态、三态视图切换、收藏、更多菜单（导出/附件/主题/明暗/删除）。
+- **顶栏收敛**：标题与保存状态、三态视图切换、更多菜单（导出/附件/主题/明暗/删除）；收藏已移除（ADR-023）。
 - **新增 HTML 导出**：单文件、内嵌预览主题与代码高亮；公式改用 KaTeX 同时输出的原生 MathML，
   避免导出文件依赖 KaTeX 字体或 CDN。
 
@@ -385,3 +384,287 @@ while (node) {
 **经验**：任何在 Shadow DOM 宿主内渲染、但自身位于 light DOM 的第三方 UI 库，
 都要检查它如何定位「样式根」。命令式库默认 `getRootNode()` / `assignedSlot` 的行为在插槽场景下
 会把样式放进错误的树。
+
+---
+
+## ADR-023 · 取消收藏 + 侧栏文件夹/笔记统一树 + 「+」收敛创建入口 ✅
+
+**背景**：收藏（starred）与文件夹树并存后出现两套组织语义：收藏页在扁平列表里筛星标，
+文件夹树只列文件夹、笔记仍在下方独立列表。用户要求「取消收藏笔记的概念」，并让侧栏
+以树状同时呈现文件夹与笔记，把「创建文件夹 / 新建笔记 / 上传笔记」全部收敛到「笔记」
+标题行右侧的「+」。
+
+**决策**：
+- **删除收藏概念**：`Note.starred`/`NoteFilter.starred`/`listMode="starred"`/`/starred` 路由、
+  `toggleStar`/`setStarred` 数据接口、列表与编辑器星标按钮一并移除；IndexedDB 版本升到 v3，
+  升级时删除遗留的 `starred` 索引（字段本身无需迁移）。
+- **统一树**：`NoteTree` 把 `folders`（按 `parentId`）与 `treeNotes`（全部 `NoteSummary`）按
+  层级组合；文件夹在前、笔记按 `updatedAt` 倒序；根目录笔记与根级文件夹同级。
+- **单一创建入口**：「+」打开 M3E dialog，内含新建文件夹 / 新建笔记 / 上传笔记三项；
+  当前选中的文件夹决定新建归属（`uiStore.currentFolderId`，null = 根目录）。
+- **树数据独立于列表**：`notesStore.treeNotes` 由 `datasource.listAllNotes()` 一次性加载，
+  CRUD 时增量同步（ADR-024 已整体移除搜索与 `summaries` 列表态）。
+- **切笔记不串写**：新增 `saveNote(id, patch)`，编辑会话的防抖与卸载落库都绑定自己载入的
+  笔记 id；`saveActive` 退化为 `saveNote(activeNoteId, patch)` 的薄封装。此前旧会话的延迟
+  保存会写进切换后的 `activeNote`，从编辑器里「+ 新建」时会把 A 的正文串到 B（回归测试见
+  `notesStore.spec.ts` 与 `s4-editor-data.spec.ts`）。
+
+**理由**：树是文件管理器的自然心智模型，文件夹与笔记同屏才能表达「归属」；把创建动作收进
+一个入口消除散布在标题行、文件夹行、FAB 的多套按钮，移动端也只需一个入口。收藏与文件夹
+是重叠的组织手段，保留前者只会让「笔记在哪」出现两个答案。
+
+**后果**：旧数据中的 `starred` 字段被忽略但不删除（无损）；桌面侧栏不再有扁平笔记列表。
+（搜索页与 `NoteList` 已在 ADR-024 中移除。）
+
+**验证**：`pnpm run type-check` 零错误；`pnpm run test:unit` 160 例全绿；
+`pnpm run test:e2e` 全绿（覆盖「+」对话框、笔记树归属新建、文件夹展开/选中、搜索与大纲）。
+
+---
+
+## ADR-024 · 侧栏收敛：移除搜索、去掉标题行/根目录行、开关移到主区顶栏 ✅
+
+**背景**：ADR-023 落地后侧栏仍有冗余层级：顶部「笔记/搜索」切换、独立的「笔记」标题行
+（带重复的「+」）、树内的「根目录」行，以及内置在侧栏里的收起按钮。用户要求侧栏从上到下
+只保留：文档/大纲页签（居中）→ 行级新建按钮 → 文件夹/笔记树，并移除搜索功能；侧栏控制
+按钮改到主内容顶栏左侧。
+
+**决策**：
+- **移除搜索**：删除 `/search` 路由、`SearchPage`、移动端底部导航（`Nav.tsx`/`M3eNavBar`）、
+  `uiStore.listMode`/`keyword` 与 `setFilter` 残留；扁平列表组件 `NoteList` 一并删除。
+  `notesStore` 不再维护 `summaries/total/loading/load`，只保留 `treeNotes` 作为侧栏投影。
+- **侧栏顺序**：`Sidebar` 只渲染文档/大纲页签；文档页签下是 `NoteTree`，其顶部有一行
+  「新建」（`btn-new`）打开 M3E dialog，下面是文件夹/笔记树。（ADR-028 增加了品牌行并改为
+  等宽页签。）
+- **去掉标题行与根目录行**：不再有「笔记」标题和独立「+」；根目录不单独展示。（ADR-027
+  起文件夹整行点击开合，收起当前选中文件夹时新建位置回到顶层。）
+- **侧栏开关**：`DesktopLayout` 在 `.desktop-main` 左上角渲染固定按钮（随状态切换
+  `btn-sidebar-close`/`btn-sidebar-open`）；`Sidebar` 关闭时直接不渲染。桌面编辑顶栏
+  左侧留出 54px 避让按钮。
+- **根级笔记缩进**：根级笔记只做 4px 轻微偏移，文件夹子项缩进 20px，避免根级笔记被误读成
+  上方展开文件夹的子项。
+
+**理由**：只有一个列表语义时，搜索页与底部导航都没有目的地；侧栏的页签、新建、树三段式
+比「标题行 + 工具栏 + 树」更接近文件管理器的心智模型。把收起按钮放到主区顶栏，侧栏本身
+可以完全交给内容，不再有一条常驻的工具行。
+
+**后果**：移动端不再有底部导航（返回编辑器使用返回按钮）；`NoteList`/`NoteListPane` 的扁平
+列表样式与 `--navbar-height` token 被移除；`listNotes()`/`query.ts` 仍留在数据层。
+
+**验证**：`pnpm run type-check` 零错误；`pnpm run test:unit` 155 例全绿；
+`pnpm run test:e2e` 28 例全绿；视觉截图确认页签居中、行级新建、树层级与主区开关位置。
+
+---
+
+## ADR-025 · 笔记行展示三要素 + 新建行并入树并吸顶 ✅
+
+**背景**：侧栏收敛后，笔记行只显示标题，缺少上下文；「新建」行位于滚动容器之外，
+与文件夹/笔记列表分成两块。
+
+**决策**：
+- **笔记行两行结构**：第一行 `标题 + relativeTime(updatedAt)`，第二行 `NoteSummary.excerpt`
+  单行省略。摘要复用保存时写入的 `excerpt`（`stripMarkdown` + 空白折叠 + 80 字上限），
+  不额外读取正文；渲染前剥掉 excerpt 开头与标题重复的部分（`notePreview`），避免
+  「标题」在行内出现两次。悬停 `title` 同时给出完整标题与预览。
+- **新建行并入树**：把「新建」行移入 `.note-tree-body` 作为首个子项，用包裹层
+  `position: sticky; top: 0` 强制吸顶；包裹层背景与侧栏面板同色，避免滚动内容透出。
+- **统一行距**：新建行、文件夹行、笔记行、行内编辑行共用 `.tree-row` 的 8px 纵向 padding，
+  相邻行之间统一留 4px 间隙（`.note-tree-body > * + *`）；新建行包裹层的底部 padding 与
+  间隙同宽，吸顶背景能盖住滚动内容。
+
+**理由**：侧栏是唯一的导航面，标题不足以区分同名/相似笔记，预览与时间能显著提高定位效率；
+「新建」与列表同组后视觉上属于同一个列表，吸顶又保证长列表滚动时入口始终可达。
+
+**后果**：笔记行高度约 52px，长列表可滚动区域变长；`NoteSummary` 无需新增字段。
+
+**验证**：`pnpm run type-check` 零错误；`pnpm run test:unit` 155 例全绿；
+`pnpm run test:e2e` 29 例全绿（新增「标题 + 预览 + 时间」行信息用例）；
+截图确认长列表滚动后「新建」行仍固定在顶部。
+
+---
+
+## ADR-026 · 文件排序按真实修改时间倒序；打开笔记不算修改 ✅
+
+**背景**：笔记树按 `updatedAt` 倒序展示。但编辑会话在卸载/防抖时会无条件调用保存，
+`saveNote` 也每次把 `updatedAt = Date.now()`；结果只是打开一篇笔记再离开，就会把它顶到
+列表最前面，排序被「浏览行为」污染。
+
+**决策**：
+- **保存前做真实变更检测**：`saveNote(id, patch)` 先算出 content/title/tags/folderId/pinned
+  的最终值，与缓存中的 Note 逐项比较；全部相同则直接返回，不写库、不刷新 `updatedAt`。
+- **标题只在必要时派生**：仅当正文真实变化时才 `deriveTitle(content)`；无改动的保存保留
+  原标题，避免手动/导入标题被打开动作改回正文派生值。
+- **排序**：`NoteTree` 在同一层级（根目录 / 每个文件夹）内按 `updatedAt` 倒序；文件夹本身
+  仍按名称排序。创建/真实编辑会刷新 `updatedAt` 并自然上浮。
+
+**理由**：「最后修改时间」应表达内容层面的变更；打开、切换视图、浏览都不应改变顺序。
+变更检测放在 store 层，所有保存入口（防抖、卸载 flush、导入、快捷键）自动受益。
+
+**后果**：保存路径多一次字段比较（纯内存，成本可忽略）；noteCache 未命中时仍会先读一次
+IDB 再比较。旧数据的 `updatedAt` 保持原样，不做迁移。
+
+**验证**：`pnpm run test:unit` 159 例全绿（新增同内容不刷新、真实变更刷新、手动标题保留、
+openNote 不刷新 4 例）；`pnpm run test:e2e` 30 例全绿（新增「仅打开不改变排序」回归）；
+`pnpm run type-check` / `pnpm run build` 通过。
+
+---
+
+## ADR-027 · 文件夹单层化 + 整行开合 + 笔记拖拽 ✅
+
+**背景**：树里的文件夹仍带独立展开箭头、双击名称可重命名、允许任意嵌套；新建 dialog 还有
+右上角关闭按钮和底部「取消」。用户要求文件夹只保留状态图标、整行点击开合、重命名必须显式
+按钮、禁止嵌套，并支持把笔记拖入/拖出文件夹。
+
+**决策**：
+- **去箭头、整行开合**：删除 `.tree-twisty` 与名称按钮，文件夹行本身承担 `role="button"`；
+  单击切换开合，`folder` / `folder_open` 图标即状态。展开时把该文件夹设为新建位置；收起
+  当前选中文件夹时新建位置回到顶层。
+- **重命名显式化**：移除 `onDoubleClick`；只有悬停后出现的编辑按钮（`folder-rename-*`）
+  能进入行内重命名，双击名称不再触发。
+- **禁止嵌套**：`createFolder(name)` 固定 `parentId=null`；`loadFolders()` 把历史嵌套文件夹
+  统一提升为根级并回写；`NoteTree` 只做「根级文件夹 → 其笔记 → 根级笔记」的扁平渲染。
+- **dialog 收敛**：`M3eDialog` 去掉 `dismissible`（无右上角 X）与 actions slot（无底部取消）；
+  保留 Esc / 点击遮罩关闭。文件夹选项文案说明「在根部创建（文件夹不支持嵌套）」。
+- **笔记拖拽**：笔记行原生 `draggable`；文件夹行作为 drop target，树空白区作为「移出到顶层」
+  drop target。落地统一走 `saveNote(id,{folderId})`，因此拖拽属于真实改动，会刷新
+  `updatedAt` 并参与排序。拖动嵌套笔记时，侧栏底部浮出「移到顶层」拖放条（绝对定位，
+  不挤动列表），树空白处也可作为移出目标。
+
+**理由**：文件夹图标本身已表达开合状态，额外箭头是重复信息；整行点击是文件管理器的常规
+交互。文件夹只保留一层后，树的缩进、删除语义和新建位置都更简单，拖拽也只有「进/出」两种。
+创建 dialog 只保留三个动作，减少无意义按钮。
+
+**后果**：历史嵌套文件夹被扁平化（数据回写，笔记归属不变）；删除文件夹不再级联看不见的
+子文件夹。HTML5 拖拽在桌面可用，触屏设备暂不支持拖拽（仍可通过新建位置选择归属）。
+
+**验证**：`pnpm run type-check` 零错误；`pnpm run test:unit` 160 例全绿（新增嵌套文件夹
+归一化用例）；`pnpm run test:e2e` 32 例全绿（新增整行开合、双击不重命名、显式重命名、
+不可嵌套、dialog 无关闭按钮、拖入/拖出文件夹）；截图确认图标状态与新 dialog 外观。
+
+---
+
+## ADR-028 · 侧栏品牌行 + GitHub 图标 + 等宽页签 ✅
+
+**背景**：侧栏顶部直接从文档/大纲页签开始，缺少产品标识；页签按内容宽度居中，视觉上不像
+一条完整的顶部导航。
+
+**决策**：
+- 在侧栏最上方增加 `.sidebar-brand` 行：左侧 `ClawClip` 文字（取 `globalConfig.appName.en`），
+  右侧 GitHub 品牌 SVG 图标；整行 `min-height: 56px`，与主内容顶栏同高。
+- GitHub 图标是 `<a target="_blank" rel="noopener noreferrer">`，地址取
+  `globalConfig.projectUrl`（`https://github.com/wpy030414/claw-clip`）。
+- 文档/大纲页签改为 `display:flex` + 每个按钮 `flex:1`，等宽铺满侧栏一行；选中态仍是
+  M3E secondary-container 圆角块。
+
+**理由**：品牌行让侧栏有明确的起点，并与主区顶栏形成水平对齐；等宽页签的可点击面积更大、
+两个页签权重一致，也避免页签随文字长度变化而游移。
+
+**后果**：侧栏顶部固定占用 56px；GitHub 图标依赖外链，点击会在新标签页打开项目主页。
+
+**验证**：`pnpm run type-check` / `pnpm run build` 通过；`pnpm run test:unit` 160 例、
+`pnpm run test:e2e` 32 例全绿（E2E 断言品牌文字、GitHub href/target 与两个页签等宽）。
+
+---
+
+## ADR-029 · 文件夹支持拖拽手动排序，顺序持久化 ✅
+
+**背景**：文件夹此前按名称排序，用户无法按自己的使用频率/习惯调整顺序。
+
+**决策**：
+- `Folder` 增加可选 `order?: number`；`loadFolders()` 把旧数据按现有顺序/名称兜底排序后
+  压成连续 `0..n-1` 并回写，之后按 `order` 升序展示。
+- `createFolder()` 取现有最大 order + 1，追加到末尾（不再按名称插入）。
+- 文件夹行原生 `draggable`：拖到另一文件夹行的上半区 → 插到其前，下半区 → 插到其后；
+  `data-drop-position` 用 inset 阴影画插入线，被拖行半透明。
+- 新增 `reorderFolders(sourceId, targetId, after)`：在内存数组中移除/插入，重算连续 order，
+  只把 order 变化的文件夹 upsert 回 IndexedDB。
+- 同时支持两种拖拽：拖**笔记**到文件夹 = 移入；拖**文件夹**到文件夹 = 排序，用独立
+  dataTransfer 类型与 ref 区分，互不干扰。
+
+**理由**：文件夹数量通常不多，手动顺序比名称排序更符合个人工作流；order 放在文件夹记录内，
+不需要额外的排序表或 meta 配置，备份/导入天然携带。
+
+**后果**：新建文件夹固定追加到末尾；删除文件夹后 order 可能出现空洞，下次加载会自动压缩。
+旧数据首次加载会写回一次 order，属于无损归一化。
+
+**验证**：`pnpm run type-check` / `pnpm run build` 通过；`pnpm run test:unit` 162 例全绿
+（新增创建追加、重排持久化、旧数据补 order 用例）；`pnpm run test:e2e` 33 例全绿
+（新增拖拽文件夹排序 + 刷新后顺序保持）。
+
+---
+
+## ADR-030 · 品牌名等宽字体 + 侧栏底部 IDB 数据统计 ✅
+
+**背景**：侧栏顶部品牌名与正文使用同一非等宽字体；侧栏也缺少「本应用到底存了多少数据」的
+直观反馈。
+
+**决策**：
+- `.sidebar-brand-name` 优先使用等宽字体栈
+  `ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace`。
+- 侧栏底部新增 `SidebarStats`：显示「共 x 个笔记，xxx KB/MB/GB」。
+- 新增 `data/stats.ts`：`getDbStats()` 读取本应用四个 store（notes/folders/blobs/meta），
+  文本记录按 JSON UTF-8 字节数估算，blob 按其 `size` 计入；不把 Blob 本体序列化。
+  大小统一按 KB/MB/GB 展示（最小单位 KB）。
+- `notesStore` 增加 `revision`：笔记/文件夹 CRUD、导入、重置后递增；`SidebarStats` 监听
+  该值并 400ms 防抖重算，避免连续保存时反复全表扫描。
+
+**理由**：等宽字体让产品名更像「工作台标识」；统计数据能帮助用户判断本地数据规模。
+基于自家 store 统计比 `navigator.storage.estimate()` 更贴近「本应用」，后者是整站 origin
+用量，会混入同源其它页面。
+
+**后果**：统计值是数据载荷的近似值，不含 IndexedDB 存储开销与索引体积；大附件只计 Blob
+字节数。统计仅在桌面侧栏展示（移动端无侧栏）。
+
+**验证**：`pnpm run type-check` / `pnpm run build` 通过；`pnpm run test:unit` 165 例全绿
+（新增 formatBytes、getDbStats、revision 用例）；`pnpm run test:e2e` 33 例全绿
+（断言初始「共 0 个笔记」与新建后「共 1 个笔记 + KB/MB/GB」）。
+
+（ADR-031 已把这条统计升级为底部 bar，并在右侧加入明暗切换。）
+
+---
+
+## ADR-031 · 侧栏底部 bar：统计胶囊 + 方形明暗切换 ✅
+
+**背景**：统计最初只是一行裸文本，贴在侧栏底部，缺少层次；明暗切换只藏在编辑器「更多」
+菜单里，侧栏没有快捷入口。
+
+**决策**：
+- 底部改为 `.sidebar-footer` 横条：`display:flex`、上下 padding、顶部 outline 分隔线。
+- 左侧 `.sidebar-stats` 做成圆角胶囊（`surface-container-high` 背景）：数据库图标 +
+  「共 x 个笔记」+ 弱化圆点 + 高亮尺寸；数字使用 `tabular-nums`。
+- 右侧 `.sidebar-theme-toggle` 是 34×34 的方形按钮（10px 圆角、outline 描边、
+  `surface-container-high` 背景），图标随实际主题取反：浅色显示月亮、深色显示太阳。
+  点击调用 `settingsStore.toggleScheme()`，与编辑器菜单的明暗切换共用同一份状态。
+- 整个 footer `flex-shrink:0`，不参与笔记树滚动；`SidebarStats` 的统计逻辑保持不变。
+
+**理由**：底部是常驻区域，适合放「只读状态 + 低风险快捷操作」。胶囊与方形按钮形成
+「信息块 + 控制块」的节奏，既有设计感又不抢笔记树的内容注意力。
+
+**后果**：底部 bar 高度约 52px；移动端没有侧栏，因此不展示该 bar；主题切换同时影响
+M3E token、编辑器与预览。
+
+**验证**：`pnpm run type-check` 通过；`pnpm run test:unit` 165 例、`pnpm run test:e2e` 33 例
+全绿（E2E 断言底部 bar 可见、主题按钮可见且点击后图标变化）；浅色/深色截图确认胶囊、
+方形按钮与顶部边框的视觉层次。
+
+---
+
+## ADR-032 · 侧栏品牌行加入网站 logo ✅
+
+**背景**：品牌行只有等宽文字 `ClawClip` 和 GitHub 图标，缺少与网站 favicon 一致的视觉标识。
+
+**决策**：
+- 在标题左侧加入 `<img className="sidebar-logo" src={import.meta.env.BASE_URL + "favicon.ico"}>`，
+  24×24、`object-fit: contain`，作为装饰性图片（`alt=""`）。
+- favicon 是单色黑标；暗色主题下通过 `data-dark` + `filter: invert(1)` 反相为白色，
+  无需额外维护两套 logo 资源。
+- 品牌行结构改为「logo + 等宽标题」的 `.sidebar-brand-main`，右侧 GitHub 图标位置不变。
+
+**理由**：直接复用站点 favicon，保证浏览器标签页与侧栏品牌一致；单色反相比再做一套暗色
+logo 更简单，也不会引入额外请求之外的资源。
+
+**后果**：logo 依赖 `public/favicon.ico` 与 Vite `BASE_URL`；若将来替换 favicon，侧栏自动同步。
+在深色主题下反相的黑色像素会变白；favicon 的透明通道保持不变。
+
+**验证**：`pnpm run type-check` 通过；`pnpm run test:unit` 165 例、`pnpm run test:e2e` 33 例
+全绿（E2E 断言 logo 可见、src 指向 favicon，并随主题切换 `data-dark`）；浅色/深色截图确认
+logo、等宽标题与底部 bar 的视觉关系。

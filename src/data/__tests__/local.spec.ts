@@ -79,38 +79,6 @@ describe("LocalDataSource.deleteNote（级联删附件）", () => {
   });
 });
 
-describe("LocalDataSource.setStarred / toggleStar（内联字段）", () => {
-  it("setStarred 改内联字段，无需独立 stars 表", async () => {
-    const note = makeNote({ id: "star-me", starred: false });
-    await ds.upsertNote(note);
-
-    await ds.setStarred("star-me", true);
-    expect((await ds.getNote("star-me"))!.starred).toBe(true);
-
-    await ds.setStarred("star-me", false);
-    expect((await ds.getNote("star-me"))!.starred).toBe(false);
-  });
-
-  it("toggleStar 返回切换后的值", async () => {
-    const note = makeNote({ id: "toggle-me", starred: false });
-    await ds.upsertNote(note);
-
-    expect(await ds.toggleStar("toggle-me")).toBe(true);
-    expect((await ds.getNote("toggle-me"))!.starred).toBe(true);
-    expect(await ds.toggleStar("toggle-me")).toBe(false);
-    expect((await ds.getNote("toggle-me"))!.starred).toBe(false);
-  });
-
-  it("setStarred 保留原 createdAt，不因收藏刷新", async () => {
-    const note = makeNote({ id: "keep-time", createdAt: 12345, updatedAt: 12345 });
-    await ds.upsertNote(note);
-    await ds.setStarred("keep-time", true);
-    const got = await ds.getNote("keep-time");
-    expect(got!.createdAt).toBe(12345);
-    expect(got!.updatedAt).toBe(12345); // ★ 收藏不改 updatedAt
-  });
-});
-
 describe("LocalDataSource.countAll / clear", () => {
   it("countAll 返回笔记总数", async () => {
     await ds.upsertNote(makeNote({ id: "c1" }));

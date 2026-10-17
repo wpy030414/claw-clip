@@ -9,7 +9,7 @@
  * 的 POST 请求即可（旧 remote.ts 即此形状），接口无需变动。
  */
 import { globalConfig } from "@/config";
-import type { Note, NoteFilter } from "@/types/note";
+import type { Note, NoteFilter, NoteSummary } from "@/types/note";
 import type { Folder } from "@/types/folder";
 import type { BlobRecord } from "@/types/blob";
 import type { BackupPayload } from "@/types/backup";
@@ -44,17 +44,14 @@ export class RemoteDataSource implements DataSource {
   async listFolders(): Promise<Folder[]> {
     return notImplemented("listFolders");
   }
+  async listAllNotes(): Promise<NoteSummary[]> {
+    return notImplemented("listAllNotes");
+  }
   async upsertFolder(_folder: Folder): Promise<Folder> {
     return notImplemented("upsertFolder");
   }
   async deleteFolder(_id: string): Promise<void> {
     return notImplemented("deleteFolder");
-  }
-  async setStarred(_id: string, _starred: boolean): Promise<void> {
-    return notImplemented("setStarred");
-  }
-  async toggleStar(_id: string): Promise<boolean> {
-    return notImplemented("toggleStar");
   }
   async saveAttachment(_noteId: string, _file: Blob): Promise<string> {
     return notImplemented("saveAttachment");

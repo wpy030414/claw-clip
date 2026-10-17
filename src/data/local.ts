@@ -4,12 +4,12 @@
  * 复用 db.ts（连接/事务）、blobStore.ts（附件）、query.ts（内存过滤）、backup.ts（base64）。
  *
  * ★ 核心修正：upsertNote 用 `put`（同 id 覆盖 = 原地更新），而非旧版的 delete+add。
- *   旧版「编辑=删旧建新」导致 id 变化、收藏靠手动搬运的语义 bug 在此根除。
+ *   旧版「编辑=删旧建新」导致 id 变化的语义 bug 在此根除。
  *
  * 实现 datasource.ts 定义的 DataSource 接口（class 风格，返回类型与接口严格对齐）。
  */
 import { globalConfig } from "@/config";
-import type { Note, NoteFilter } from "@/types/note";
+import type { Note, NoteFilter, NoteSummary } from "@/types/note";
 import type { Folder } from "@/types/folder";
 import type { BlobRecord } from "@/types/blob";
 import type { BackupBlob, BackupPayload } from "@/types/backup";
@@ -55,24 +55,6 @@ export class LocalDataSource implements DataSource {
     );
   }
 
-  /** 内联字段：改 starred 再原地 put（保留原 createdAt/updatedAt，不因收藏刷新时间）。 */
-  async setStarred(id: string, starred: boolean): Promise<void> {
-    const note = await this.getNote(id);
-    if (!note) return;
-    await withTx(notesStore, "readwrite", (tx) =>
-      idbReq(tx.objectStore(notesStore).put({ ...note, starred })),
-    );
-  }
-
-  /** 切换收藏，返回切换后的值（笔记不存在返回 false）。 */
-  async toggleStar(id: string): Promise<boolean> {
-    const note = await this.getNote(id);
-    if (!note) return false;
-    const next = !note.starred;
-    await this.setStarred(id, next);
-    return next;
-  }
-
   async saveAttachment(noteId: string, file: Blob): Promise<string> {
     return saveBlob(noteId, file);
   }
@@ -85,7 +67,17 @@ export class LocalDataSource implements DataSource {
 
   async listFolders(): Promise<Folder[]> {
     const all = await getAllOf<Folder>(foldersStore);
-    return all.sort((a, b) => a.name.localeCompare(b.name));
+    return all.sort(
+      (a, b) =>
+        (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+        a.name.localeCompare(b.name),
+    );
+  }
+
+  /** 侧栏笔记树：一次取回全部投影，搜索/分页语义与列表互不影响。 */
+  async listAllNotes(): Promise<NoteSummary[]> {
+    const { items } = await queryNotes({ sort: "title" }, Number.MAX_SAFE_INTEGER, 0);
+    return items;
   }
 
   async upsertFolder(folder: Folder): Promise<Folder> {

@@ -7,7 +7,10 @@
 export interface Folder {
   id: string;
   name: string;
+  /** 历史字段；文件夹已不允许嵌套，加载时会归一化为 null。 */
   parentId: string | null;
+  /** 手动排序序号：越小越靠前；缺失时由 loadFolders 归一化补齐。 */
+  order?: number;
   createdAt: number;
   updatedAt: number;
 }

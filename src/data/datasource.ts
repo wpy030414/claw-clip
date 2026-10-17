@@ -8,7 +8,7 @@
 import { globalConfig } from "@/config";
 import type { BackupPayload } from "@/types/backup";
 import type { BlobRecord } from "@/types/blob";
-import type { Note, NoteFilter } from "@/types/note";
+import type { Note, NoteFilter, NoteSummary } from "@/types/note";
 import type { Folder } from "@/types/folder";
 import { LocalDataSource } from "./local";
 import { RemoteDataSource } from "./remote";
@@ -33,14 +33,12 @@ export interface DataSource {
   // —— 文件夹树（v2）——
   /** 全部文件夹（无序，由 UI 组树）。 */
   listFolders(): Promise<Folder[]>;
+  /** 全部笔记的轻量投影（侧栏笔记树用，不分页）。 */
+  listAllNotes(): Promise<NoteSummary[]>;
   /** 新增或更新文件夹。 */
   upsertFolder(folder: Folder): Promise<Folder>;
   /** 删除文件夹：级联删除子孙文件夹及其下全部笔记与附件。 */
   deleteFolder(id: string): Promise<void>;
-  /** 设置收藏（starred 为 Note 内联字段）。 */
-  setStarred(id: string, starred: boolean): Promise<void>;
-  /** 切换收藏，返回切换后的值。 */
-  toggleStar(id: string): Promise<boolean>;
   /** 保存附件二进制，返回 blob id（正文用 clawclip://blob/<id> 引用）。 */
   saveAttachment(noteId: string, file: Blob): Promise<string>;
   /** 取附件记录（含 Blob 本体）。 */

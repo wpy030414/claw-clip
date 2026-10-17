@@ -7,8 +7,9 @@ import { useUiStore } from "@/stores/uiStore";
 beforeEach(() => {
   useUiStore.setState({
     isDesktop: true,
-    keyword: "",
-    filter: {},
+    currentFolderId: null,
+    sidebarOpen: true,
+    sidebarTab: "docs",
     commandPaletteOpen: false,
     tocOpen: true,
     confirmQueue: [],
@@ -21,23 +22,18 @@ describe("uiStore 基础 setter", () => {
     expect(useUiStore.getState().isDesktop).toBe(false);
   });
 
-  it("setKeyword 更新搜索词", () => {
-    useUiStore.getState().setKeyword("搜索内容");
-    expect(useUiStore.getState().keyword).toBe("搜索内容");
+  it("setSidebarOpen / setSidebarTab", () => {
+    useUiStore.getState().setSidebarOpen(false);
+    expect(useUiStore.getState().sidebarOpen).toBe(false);
+    useUiStore.getState().setSidebarTab("outline");
+    expect(useUiStore.getState().sidebarTab).toBe("outline");
   });
 
-  it("setFilter 合并过滤条件", () => {
-    useUiStore.getState().setFilter({ starred: true });
-    useUiStore.getState().setFilter({ tags: ["a"] });
-    expect(useUiStore.getState().filter).toEqual({ starred: true, tags: ["a"] }); // ★ 合并非替换
-  });
-
-  it("resetFilter 清空过滤 + 关键词", () => {
-    useUiStore.getState().setFilter({ starred: true });
-    useUiStore.getState().setKeyword("x");
-    useUiStore.getState().resetFilter();
-    expect(useUiStore.getState().filter).toEqual({});
-    expect(useUiStore.getState().keyword).toBe("");
+  it("setCurrentFolderId 记录新建位置", () => {
+    useUiStore.getState().setCurrentFolderId("f1");
+    expect(useUiStore.getState().currentFolderId).toBe("f1");
+    useUiStore.getState().setCurrentFolderId(null);
+    expect(useUiStore.getState().currentFolderId).toBeNull();
   });
 
   it("toggleToc 翻转大纲开关", () => {

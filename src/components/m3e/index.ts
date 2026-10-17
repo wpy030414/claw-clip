@@ -11,13 +11,8 @@
 // —— 主题 ——
 export { M3eTheme } from "@m3e/react/theme";
 
-// —— 基础动作 ——
-export { M3eIconButton } from "@m3e/react/icon-button";
-export { M3eFab } from "@m3e/react/fab";
-export { M3eIcon } from "@m3e/react/icon";
-
-// —— 导航（移动端 nav-bar；桌面侧栏为自绘）——
-export { M3eNavBar, M3eNavItem } from "@m3e/react/nav-bar";
-
 // —— 反馈（命令式 API：M3eSnackbar.open）——
 export { M3eSnackbar } from "@m3e/react/snackbar";
+
+// —— 浮层 ——
+export { M3eDialog } from "@m3e/react/dialog";

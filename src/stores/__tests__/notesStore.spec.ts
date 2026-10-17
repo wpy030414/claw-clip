@@ -1,29 +1,30 @@
 /**
- * notesStore 单测：数据态 + 乐观更新 + 派生字段重算。
+ * notesStore 单测：笔记树数据态 + 乐观更新 + 派生字段重算。
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { useNotesStore } from "@/stores/notesStore";
+import { datasource } from "@/data/datasource";
+import { emptyFolder } from "@/types/folder";
 
 beforeEach(() => {
   // 重置 store 状态
   useNotesStore.setState({
-    summaries: [],
-    total: 0,
-    loading: false,
     activeNoteId: null,
     activeNote: null,
+    folders: [],
+    treeNotes: [],
+    revision: 0,
   });
 });
 
 describe("notesStore.createNote", () => {
-  it("创建空笔记并乐观插入 summaries 头部", async () => {
+  it("创建空笔记并乐观插入笔记树", async () => {
     const id = await useNotesStore.getState().createNote();
     expect(id).toBeTruthy();
 
     const state = useNotesStore.getState();
-    expect(state.summaries).toHaveLength(1);
-    expect(state.summaries[0].id).toBe(id);
-    expect(state.total).toBe(1);
+    expect(state.treeNotes).toHaveLength(1);
+    expect(state.treeNotes[0].id).toBe(id);
     expect(state.activeNoteId).toBe(id);
     expect(state.activeNote).toBeDefined();
   });
@@ -43,16 +44,16 @@ describe("notesStore.saveActive（乐观更新 + 派生字段重算）", () => {
     expect(state.activeNote!.updatedAt).toBeGreaterThan(0);
   });
 
-  it("乐观更新 summaries 对应项（列表 UI 实时反映）", async () => {
+  it("乐观更新笔记树对应项（侧栏实时反映标题）", async () => {
     const id = await useNotesStore.getState().createNote();
-    const oldSummary = useNotesStore.getState().summaries[0];
+    const oldRow = useNotesStore.getState().treeNotes[0];
 
     await useNotesStore.getState().saveActive({ title: "改了标题" });
 
-    const newSummary = useNotesStore.getState().summaries[0];
-    expect(newSummary.id).toBe(id);
-    expect(newSummary.title).toBe("改了标题"); // ★ 列表投影也更新了
-    expect(newSummary).not.toBe(oldSummary); // 对象引用变了（乐观替换）
+    const newRow = useNotesStore.getState().treeNotes[0];
+    expect(newRow.id).toBe(id);
+    expect(newRow.title).toBe("改了标题"); // ★ 树投影也更新了
+    expect(newRow).not.toBe(oldRow); // 对象引用变了（乐观替换）
   });
 
   it("显式给 title 则用之，否则 deriveTitle 回填", async () => {
@@ -79,31 +80,153 @@ describe("notesStore.saveActive（乐观更新 + 派生字段重算）", () => {
   });
 });
 
-describe("notesStore.toggleStar（乐观）", () => {
-  it("乐观切换收藏，summaries 和 activeNote 同步更新", async () => {
+describe("notesStore.saveNote（切笔记不串写）", () => {
+  it("显式 id 保存只写入该笔记，即使 activeNote 已切到别的笔记", async () => {
+    const a = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(a, { content: "# A\n\n内容 A" });
+
+    const b = await useNotesStore.getState().createNote(); // activeNote 切到 b
+    await useNotesStore.getState().saveNote(b, { content: "# B\n\n内容 B" });
+
+    // 模拟 a 的延迟保存：activeNote 是 b，但必须落到 a
+    await useNotesStore.getState().saveNote(a, { content: "# A2\n\n追加 A" });
+
+    await useNotesStore.getState().openNote(a);
+    expect(useNotesStore.getState().activeNote!.content).toContain("追加 A");
+    await useNotesStore.getState().openNote(b);
+    expect(useNotesStore.getState().activeNote!.content).toBe("# B\n\n内容 B");
+  });
+});
+
+describe("notesStore.loadFolders（文件夹不可嵌套）", () => {
+  it("历史嵌套文件夹在加载时提升为根级并落库", async () => {
+    const parent = await datasource.upsertFolder(emptyFolder("父", null));
+    const child = await datasource.upsertFolder(emptyFolder("子", parent.id));
+
+    await useNotesStore.getState().loadFolders();
+
+    expect(useNotesStore.getState().folders.find((f) => f.id === child.id)?.parentId).toBeNull();
+    const persisted = (await datasource.listFolders()).find((f) => f.id === child.id);
+    expect(persisted?.parentId).toBeNull();
+    // 旧数据没有 order：加载时补齐连续序号
+    expect(useNotesStore.getState().folders.map((f) => f.order)).toEqual([0, 1]);
+  });
+});
+
+describe("notesStore 文件夹手动排序", () => {
+  it("createFolder 按创建顺序追加 order，不按名称插入", async () => {
+    await useNotesStore.getState().createFolder("乙");
+    await useNotesStore.getState().createFolder("甲");
+
+    const folders = useNotesStore.getState().folders;
+    expect(folders.map((f) => f.name)).toEqual(["乙", "甲"]);
+    expect(folders.map((f) => f.order)).toEqual([0, 1]);
+  });
+
+  it("reorderFolders 调整顺序并持久化", async () => {
+    const a = await useNotesStore.getState().createFolder("甲");
+    await useNotesStore.getState().createFolder("乙");
+    const c = await useNotesStore.getState().createFolder("丙");
+
+    await useNotesStore.getState().reorderFolders(c, a, false); // 丙 放到 甲 之前
+
+    expect(useNotesStore.getState().folders.map((f) => f.name)).toEqual(["丙", "甲", "乙"]);
+    const persisted = await datasource.listFolders();
+    expect(persisted.map((f) => f.name)).toEqual(["丙", "甲", "乙"]);
+  });
+});
+
+describe("notesStore.revision（供侧栏统计刷新）", () => {
+  it("创建 / 真实编辑 / 删除都会递增", async () => {
     const id = await useNotesStore.getState().createNote();
-    expect(useNotesStore.getState().summaries[0].starred).toBe(false);
+    const afterCreate = useNotesStore.getState().revision;
+    expect(afterCreate).toBeGreaterThan(0);
 
-    await useNotesStore.getState().toggleStar(id);
+    await useNotesStore.getState().saveNote(id, { content: "# 改动" });
+    const afterSave = useNotesStore.getState().revision;
+    expect(afterSave).toBeGreaterThan(afterCreate);
 
-    expect(useNotesStore.getState().summaries[0].starred).toBe(true); // ★ 乐观
-    expect(useNotesStore.getState().activeNote!.starred).toBe(true);
+    await useNotesStore.getState().saveNote(id, { content: "# 改动" }); // 无变化
+    expect(useNotesStore.getState().revision).toBe(afterSave);
 
-    await useNotesStore.getState().toggleStar(id);
-    expect(useNotesStore.getState().summaries[0].starred).toBe(false);
+    await useNotesStore.getState().remove(id);
+    expect(useNotesStore.getState().revision).toBeGreaterThan(afterSave);
+  });
+});
+
+describe("notesStore.saveNote（真实修改才刷新 updatedAt）", () => {
+  const rowOf = (id: string) =>
+    useNotesStore.getState().treeNotes.find((n) => n.id === id)!;
+
+  it("内容相同的保存不刷新 updatedAt（打开/关闭不算修改）", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content: "# 标题\n\n正文" });
+    const before = rowOf(id).updatedAt;
+
+    await new Promise((r) => setTimeout(r, 10));
+    await useNotesStore.getState().saveNote(id, { content: "# 标题\n\n正文" });
+
+    expect(rowOf(id).updatedAt).toBe(before);
+  });
+
+  it("内容真实变化时刷新 updatedAt", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content: "# 标题\n\n正文" });
+    const before = rowOf(id).updatedAt;
+
+    await new Promise((r) => setTimeout(r, 10));
+    await useNotesStore.getState().saveNote(id, { content: "# 标题\n\n正文改了" });
+
+    expect(rowOf(id).updatedAt).toBeGreaterThan(before);
+  });
+
+  it("无改动的保存不会把手动标题派生回去", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore
+      .getState()
+      .saveNote(id, { content: "# 正文标题", title: "手动标题" });
+    const before = rowOf(id).updatedAt;
+
+    await useNotesStore.getState().saveNote(id, { content: "# 正文标题" });
+
+    expect(rowOf(id).title).toBe("手动标题");
+    expect(rowOf(id).updatedAt).toBe(before);
+  });
+
+  it("openNote 不刷新 updatedAt", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content: "# 打开测试" });
+    const before = rowOf(id).updatedAt;
+
+    await new Promise((r) => setTimeout(r, 10));
+    useNotesStore.getState().closeNote();
+    await useNotesStore.getState().openNote(id);
+
+    expect(rowOf(id).updatedAt).toBe(before);
+  });
+});
+
+describe("notesStore.loadTree", () => {
+  it("拉取全部笔记投影", async () => {
+    await useNotesStore.getState().createNote();
+    await useNotesStore.getState().createNote();
+    useNotesStore.setState({ treeNotes: [] });
+
+    await useNotesStore.getState().loadTree();
+
+    expect(useNotesStore.getState().treeNotes).toHaveLength(2);
   });
 });
 
 describe("notesStore.remove（乐观删除）", () => {
-  it("乐观从 summaries 移除，total 减一", async () => {
+  it("乐观从笔记树移除，并清空当前编辑态", async () => {
     const id = await useNotesStore.getState().createNote();
-    expect(useNotesStore.getState().summaries).toHaveLength(1);
+    expect(useNotesStore.getState().treeNotes).toHaveLength(1);
 
     await useNotesStore.getState().remove(id);
 
-    expect(useNotesStore.getState().summaries).toHaveLength(0); // ★ 乐观移除
-    expect(useNotesStore.getState().total).toBe(0);
-    expect(useNotesStore.getState().activeNoteId).toBeNull(); // 当前编辑态也清了
+    expect(useNotesStore.getState().treeNotes).toHaveLength(0); // ★ 乐观移除
+    expect(useNotesStore.getState().activeNoteId).toBeNull();
   });
 });
 
@@ -122,39 +245,6 @@ describe("notesStore.openNote / closeNote", () => {
   });
 });
 
-describe("notesStore.load", () => {
-  it("加载列表到 summaries，total 反映过滤后总数", async () => {
-    await useNotesStore.getState().createNote();
-    await useNotesStore.getState().createNote();
-
-    // 清空 summaries 模拟「刷新页面后重新加载」
-    useNotesStore.setState({ summaries: [], total: 0 });
-
-    await useNotesStore.getState().load({});
-
-    expect(useNotesStore.getState().summaries).toHaveLength(2);
-    expect(useNotesStore.getState().total).toBe(2);
-    expect(useNotesStore.getState().loading).toBe(false);
-  });
-
-  it("page=0 替换，page>0 追加（无限滚动）", async () => {
-    // 造 3 条
-    await useNotesStore.getState().createNote();
-    await useNotesStore.getState().createNote();
-    await useNotesStore.getState().createNote();
-    useNotesStore.setState({ summaries: [], total: 0 });
-
-    await useNotesStore.getState().load({}, 0);
-    const firstBatch = useNotesStore.getState().summaries;
-
-    await useNotesStore.getState().load({}, 1); // 第二页（追加）
-    const secondBatch = useNotesStore.getState().summaries;
-
-    // 追加后总数 >= 第一批（取决于 pageSize，此处仅验证追加逻辑不替换）
-    expect(secondBatch.length).toBeGreaterThanOrEqual(firstBatch.length);
-  });
-});
-
 describe("notesStore.exportBackup / reset", () => {
   it("exportBackup 返回完整 payload", async () => {
     await useNotesStore.getState().createNote();
@@ -168,12 +258,11 @@ describe("notesStore.exportBackup / reset", () => {
 
   it("reset 清空全部状态", async () => {
     await useNotesStore.getState().createNote();
-    expect(useNotesStore.getState().summaries).toHaveLength(1);
+    expect(useNotesStore.getState().treeNotes).toHaveLength(1);
 
     await useNotesStore.getState().reset();
 
-    expect(useNotesStore.getState().summaries).toHaveLength(0);
-    expect(useNotesStore.getState().total).toBe(0);
+    expect(useNotesStore.getState().treeNotes).toHaveLength(0);
     expect(useNotesStore.getState().activeNote).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 /**
  * EditorPane：Markdown 编辑工作区（参考 markdownassistant 的核心布局）。
  *
- * 顶栏：返回（移动端）/ 标题与状态 / 编辑·分屏·预览 / 收藏 / 更多菜单。
+ * 顶栏：返回（移动端）/ 标题与状态 / 编辑·分屏·预览 / 更多菜单。
  * 工具栏：标题、粗斜体、删除线、行内代码、引用、列表、任务、代码块、链接、图片、表格、公式、分隔线。
  * 主区：左源码（CodeMirror）+ 右实时预览（markdown-it），编辑仍保持 Typora 式自动保存。
  *
@@ -47,7 +47,6 @@ type ViewMode = "edit" | "split" | "preview";
 export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const { value, loading, onChange } = useMarkdownSession(noteId);
   const activeNote = useNotesStore((s) => s.activeNote);
-  const toggleStar = useNotesStore((s) => s.toggleStar);
   const remove = useNotesStore((s) => s.remove);
   const previewCss = useSettingsStore((s) => s.previewCss);
   const fontsize = useSettingsStore((s) => s.fontSize);
@@ -120,8 +119,6 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     }
     return undefined;
   }, [effectiveView]);
-
-  const handleStar = () => void toggleStar(noteId);
 
   const handleDelete = async () => {
     setMenuOpen(false);
@@ -283,19 +280,6 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
             <span className="material-symbols-outlined">visibility</span>
           </button>
         </div>
-
-        <button
-          type="button"
-          className="editor-icon-btn"
-          onClick={handleStar}
-          aria-label={activeNote?.starred ? "取消收藏" : "收藏"}
-          data-testid="btn-star"
-          data-starred={activeNote?.starred ? "true" : "false"}
-        >
-          <span className="material-symbols-outlined">
-            {activeNote?.starred ? "star" : "star_border"}
-          </span>
-        </button>
 
         <div className="editor-menu-wrap">
           <button

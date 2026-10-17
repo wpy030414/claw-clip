@@ -18,15 +18,17 @@ export function AppShell() {
   const create = useCreateNote();
   const toggleScheme = useSettingsStore((s) => s.toggleScheme);
   const loadFolders = useNotesStore((s) => s.loadFolders);
+  const loadTree = useNotesStore((s) => s.loadTree);
 
   useEffect(() => {
     setDesktop(isDesktop);
   }, [isDesktop, setDesktop]);
 
-  // 文件夹树是常驻侧栏数据，启动时加载一次
+  // 侧栏笔记树是常驻数据，启动时加载一次
   useEffect(() => {
     void loadFolders();
-  }, [loadFolders]);
+    void loadTree();
+  }, [loadFolders, loadTree]);
 
   // 跨区快捷键（编辑器内的文本格式化由 CodeMirror 处理）
   useHotkeys({

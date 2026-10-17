@@ -22,19 +22,28 @@ interface Result {
 
 export function useMarkdownSession(noteId: string | null): Result {
   const openNote = useNotesStore((s) => s.openNote);
-  const saveActive = useNotesStore((s) => s.saveActive);
+  const saveNote = useNotesStore((s) => s.saveNote);
 
   const [value, setValue] = useState("");
   /** 已完成载入的笔记 id：只有它等于当前 noteId 才允许渲染编辑器。 */
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const latestRef = useRef("");
-  /** 已成功载入的笔记 id：卸载时只把内容写回同一条笔记，避免串写。 */
+  /** 已成功载入的笔记 id：保存时只写回同一条笔记，避免切笔记后串写。 */
   const loadedIdRef = useRef<string | null>(null);
+  /**
+   * 本会话绑定的笔记 id（EditorPane 以 key={noteId} 重挂载，实例与笔记一一对应）。
+   * 防抖回调必须用它而不是 store 的 activeNote——切笔记后 activeNote 已经变了。
+   */
+  const sessionIdRef = useRef<string | null>(noteId);
+  sessionIdRef.current = noteId;
 
   // 纯防抖：连续输入期间不写库，停下来 700ms 才写一次；无手动保存入口
   const throttledSave = useRef(
     debounce(() => {
-      void saveActive({ content: latestRef.current });
+      const id = sessionIdRef.current;
+      if (id && loadedIdRef.current === id) {
+        void saveNote(id, { content: latestRef.current });
+      }
     }, AUTOSAVE_WAIT),
   ).current;
 
@@ -60,11 +69,11 @@ export function useMarkdownSession(noteId: string | null): Result {
       // 卸载立即落库（内存 + 异步 IDB），避免切笔记/断点切换丢最后一段输入
       throttledSave.cancel();
       if (loadedIdRef.current === noteId) {
-        void saveActive({ content: latestRef.current });
+        void saveNote(noteId, { content: latestRef.current });
       }
       loadedIdRef.current = null;
     };
-  }, [noteId, openNote, throttledSave, saveActive]);
+  }, [noteId, openNote, throttledSave, saveNote]);
 
   const onChange = useCallback(
     (next: string) => {
@@ -77,8 +86,9 @@ export function useMarkdownSession(noteId: string | null): Result {
 
   const saveNow = useCallback(async () => {
     throttledSave.cancel();
-    await saveActive({ content: latestRef.current });
-  }, [throttledSave, saveActive]);
+    const id = sessionIdRef.current;
+    if (id) await saveNote(id, { content: latestRef.current });
+  }, [throttledSave, saveNote]);
 
   // ★ 由 noteId / loadedId 派生 loading，而不是命令式 setLoading：
   //   openNote 命中缓存时两次 setState 可能被 React 合并，中间「loading=true」的渲染

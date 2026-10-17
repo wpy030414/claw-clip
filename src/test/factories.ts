@@ -11,7 +11,6 @@ export function makeNote(overrides: Partial<Note> = {}): Note {
     id: newId(),
     title: "测试笔记",
     content: "# 测试\n\n正文内容",
-    starred: false,
     tags: [],
     createdAt: now,
     updatedAt: now,

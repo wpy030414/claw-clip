@@ -26,10 +26,10 @@ test("S1: M3E 主题挂载 + 按钮渲染 shadow DOM", async ({ page }) => {
   await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
 
   // M3E 组件渲染出 shadow DOM（Lit 结果，非空标签）。
-  // S5 起列表头的新建按钮是 m3e-icon-button（原 S4 验证壳的 m3e-button 已移除）。
-  const btn = page.locator("m3e-icon-button").first();
-  await expect(btn).toBeAttached();
-  const hasShadow = await btn.evaluate(
+  // 侧栏 NotesTree 常驻渲染一个（关闭状态的）m3e-dialog。
+  const dialog = page.locator("m3e-dialog").first();
+  await expect(dialog).toBeAttached();
+  const hasShadow = await dialog.evaluate(
     (el) => !!el.shadowRoot && el.shadowRoot.childElementCount > 0,
   );
   expect(hasShadow).toBe(true);

@@ -5,7 +5,7 @@ export function EditorPlaceholder() {
       <span className="material-symbols-outlined" aria-hidden="true">
         edit_note
       </span>
-      <p>选择一条笔记，或点击「+」新建一条</p>
+      <p>选择一条笔记，或点击左上角「新建」创建一条</p>
     </div>
   );
 }
