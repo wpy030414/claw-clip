@@ -1,7 +1,9 @@
 # 架构文档（ARCHITECTURE）
 
 > 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、可配置印刷主题、MD/DOCX/PDF 互导。
-> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑 + 轻量 IR）+ markdown-it（打印/导出渲染）+ Zustand + IndexedDB。
+> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/打印/导出渲染）+ Zustand + IndexedDB。
+>
+> 编辑工作区对标 markdownassistant：**左源码 + 右实时预览 + 格式工具栏**，三态视图（编辑 / 分屏 / 预览）。
 >
 > 关键决策的「为什么」见 [DECISIONS.md](./DECISIONS.md)；本文件讲「是什么、怎么连」。
 
@@ -60,18 +62,20 @@ notesStore.openNote(id)
   → 正文（存储态）始终保存 clawclip:// 引用，永不落 blob: URL
 ```
 
-### 预览 / 打印
+### 实时预览 / 打印
 ```
-Markdown 源码 → hydrateMarkdown(clawclip:// → object URL)
+Markdown 源码 → debounce(120ms) → hydrateMarkdown(clawclip:// → object URL)
   → markdown-it（html:false + GFM/脚注/定义列表/上下标/高亮/KaTeX + highlight.js）
-  → HTML → 预览区 / 打印根（#print-root）
+  → HTML → 右侧预览区 / 打印根（#print-root）
 ```
+预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出 HTML/DOCX 时按需渲染一次（`renderForExport`）。
 预览与打印**共用同一份 HTML**，因此「预览所见 = 打印所得」；打印根在屏幕上移出视口，
 `@media print` 时占据整页，用户通过系统「另存为 PDF」完成 PDF 导出。
 
 ### 导入 / 导出
 ```
 导出 MD   → 正文原文下载
+导出 HTML → 预览 CSS + 代码高亮样式内嵌为单文件（公式走原生 MathML）
 导出 DOCX → 渲染 HTML → DOMParser → docx 库（标题/段落/列表/表格/代码/图片）
 导出 PDF  → 打印根 + 系统打印对话框
 导入 MD   → File.text()
@@ -86,7 +90,7 @@ Markdown 源码 → hydrateMarkdown(clawclip:// → object URL)
 | | 桌面工作台（≥900px） | 移动卡片流（<900px） |
 |---|---|---|
 | 导航 | **可收侧栏**（文档/大纲页签；不设 nav rail） | `M3eNavBar`（底部横排） |
-| 主区 | **单栏**：列表在侧栏，主区只放编辑器 | 列表 or 全屏编辑器（有 noteId 则全屏） |
+| 主区 | **编辑工作区**：编辑 / 分屏 / 预览三态；默认分屏 | 列表 or 全屏编辑器（有 noteId 则全屏）；split 退化为编辑 |
 | 列表 | 侧栏内文件夹树 + `NoteList variant="compact"` | `NoteList variant="card"` + 文件夹树 |
 | 大纲 | 侧栏「大纲」页签 | 编辑器内（暂不提供） |
 | 返回 | 无需（侧栏常驻） | `EditorPane onBack` 回列表 |
@@ -116,9 +120,15 @@ CodeMirror 6 是命令式 API，React 封装遵循：
 - **半受控**：`value` 只在挂载时进入 `EditorState.create({doc})`；切换笔记由父级 `key={noteId}` 重挂载。
   载入完成前不渲染编辑器（`loadedId === noteId`），避免以空文档挂载后无法回灌。
 - **不回流**：`updateListener` 只向上通知，不把父级 state 再 dispatch 回文档（避免 CJK 组合输入乱序）。
-- **轻量 IR**（`markdownIR.ts`）：浏览模式下用 CodeMirror 装饰隐藏非当前行的 `#`/`**`/链接等标记，
-  标题/引用/列表/图片/任务框直接渲染样式；光标进入某行即还原该行源码，**仍可直接写**。
-  未聚焦时整篇按浏览态呈现。切换模式用 `Compartment.reconfigure` 热切换，不重建文档、不丢撤销历史。
+- **分屏实时预览**：源码由 CodeMirror 渲染，右侧由 markdown-it 渲染同一份源码；预览渲染 120ms 防抖，
+  连续输入不重复渲染。视图三态（编辑 / 分屏 / 预览）持久化在 `settings.viewMode`，桌面默认 `split`。
+- **格式工具栏**（`MarkdownToolbar` + `markdownCommands.ts`）：工具栏只发出纯命令，纯函数把
+  「文档 + 选区」映射为 CodeMirror 的 `changes`/`selection`，可脱离 DOM 单测；编辑器只负责 dispatch。
+- **★ CodeMirror 必须 `root: document`**：`EditorView` 默认用 `getRoot(parent)` 定位样式根，
+  而该函数会沿 `assignedSlot` 走进 `<m3e-theme>` 的 ShadowRoot。编辑器是 light-DOM 插槽内容，
+  Shadow DOM 内的样式规则匹配不到它，会导致 CodeMirror 全部基础样式失效（等宽字体/行高/内边距/焦点描边）。
+  显式传 `root: document` 把样式表挂到文档根（见 ADR-022）。
+- **视图切换不卸载编辑器**：仅预览时源码面板用 CSS 隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
 - **按需加载**：markdown-it/KaTeX/highlight.js 仅在需要打印/导出 HTML 时动态 import；
   Mermaid、docx、mammoth、pdfjs 均为动态 import，不进入首屏。
 - **文件入口**：`paste`/`drop` 由 `EditorView.domEventHandlers` 拦截，交给上层存 blob 后插入引用。
@@ -142,9 +152,9 @@ store 与 `notes.folderId` 索引。列表查询带请求序号，过滤条件�
 ## 7. 测试金字塔
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
-  文件夹 CRUD 与级联删除、DOCX 导出、导入分发、查询过滤/分页、自动保存与快捷键等（145 例）。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，23 例）：编辑/浏览 IR/自动保存/刷新持久化/
-  原地编辑 id 不变/附件闭环/双形态断点切换/侧栏大纲与收起/文件夹/导入/导出 MD/DOCX/PDF/打印主题。
+  文件夹 CRUD 与级联删除、DOCX 导出、导入分发、查询过滤/分页、自动保存与快捷键等（161 例）。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，27 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏大纲与收起/文件夹/导入/导出 MD/HTML/DOCX/PDF/打印主题。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`
   （打印根为 `md-preview-print`，避免重复）；确定性信号用 `expect.poll` / `waitForSelector`。
 
@@ -166,13 +176,16 @@ store 与 `notes.folderId` 索引。列表查询带请求序号，过滤条件�
 | `src/hooks/useMarkdownSession.ts` | 编辑会话：加载、节流自动保存、卸载落库 |
 | `src/hooks/useRenderedMarkdown.ts` | 按需渲染 + 附件水合 |
 | `src/components/editor/MarkdownEditor.tsx` | CodeMirror 6 封装 |
-| `src/features/editor/EditorPane.tsx` | 顶栏 + 编辑/预览 + 导出 + 打印根 |
+| `src/features/editor/EditorPane.tsx` | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出 + 打印根 |
+| `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令） |
+| `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数 |
 | `src/features/preview/themes.ts` | 内置印刷排版 + 自定义 CSS 合成 |
 
 ## 10. 已知限制
 
-- **轻量 IR 覆盖常见语法**：标题/引用/列表/任务框/图片/粗斜体/删除线/高亮/行内代码/链接；
-  围栏代码块标记、嵌套强调、脚注等在浏览模式下仍以源码呈现（可切到编辑模式查看原文）。
+- **移动端不分屏**：<900px 时「分屏」退化为纯编辑，预览通过顶栏切到「预览」整页查看。
+- **HTML 导出使用原生 MathML**：为避免单文件依赖 KaTeX 字体，导出文档隐藏 `.katex-html`、改用 MathML；
+  现代浏览器可正常显示，老旧浏览器公式退化为纯文本。Mermaid 图表在导出 HTML 中保留为代码块。
 - **PDF 回导是启发式的**：只保证文字可编辑，不保证版式、表格、图片还原。
 - **DOCX 导出**覆盖常见块级结构（标题/段落/列表/表格/代码/图片），复杂样式（批注、目录域）不迁移。
 - **Mermaid 体积较大**（elk/cytoscape 按图类型切分为懒加载 chunk），首次渲染图表会有短暂延迟。

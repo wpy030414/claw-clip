@@ -28,8 +28,7 @@ test("附件: 选择图片 → 正文写入 clawclip:// 引用", async ({ page }
     buffer: PNG,
   });
 
-  // 浏览模式会把图片渲染成 widget（源码隐藏），切回源码模式检查引用
-  await page.getByTestId("btn-mode").click();
+  // 源码里始终保存 clawclip:// 引用（运行时 object URL 不落库）
   await expect
     .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 5_000 })
     .toContain("clawclip://blob/");
@@ -45,9 +44,9 @@ test("附件: 预览把 clawclip:// hydrate 成可显示的 object URL", async (
   });
   await page.waitForTimeout(800);
 
-  // 默认浏览模式：图片行不是当前行 → 渲染成图片 widget
-  const img = page.locator(".cm-ir-image").first();
-  await expect(img).toBeAttached({ timeout: 10_000 });
+  // 右侧实时预览把 clawclip:// 水合成可显示的 object URL
+  const img = page.getByTestId("md-preview").locator("img").first();
+  await expect(img).toBeVisible({ timeout: 10_000 });
   const src = await img.getAttribute("src");
   expect(src?.startsWith("blob:")).toBeTruthy();
 });
@@ -89,5 +88,7 @@ test("附件: 刷新后仍能 hydrate（blob 持久化）", async ({ page }) => 
 
   await page.reload();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
-  await expect(page.locator(".cm-ir-image").first()).toBeAttached({ timeout: 10_000 });
+  await expect(page.getByTestId("md-preview").locator("img").first()).toBeVisible({
+    timeout: 10_000,
+  });
 });

@@ -45,8 +45,8 @@ test("导入 Markdown → 新建笔记并进入编辑器", async ({ page }) => {
 
   // 标题取自文件名；正文里的 H1 仍在预览中呈现
   await expect(page.getByTestId("editor-title")).toHaveText("导入的文档", { timeout: 10_000 });
-  // 默认浏览模式且未聚焦：标题标记隐藏，渲染为标题行
-  await expect(page.locator(".cm-line.cm-ir-h1").first()).toContainText("导入标题", {
+  // 右侧实时预览渲染导入的 H1
+  await expect(page.getByTestId("md-preview").locator("h1").first()).toContainText("导入标题", {
     timeout: 10_000,
   });
 });
@@ -59,17 +59,17 @@ test("导出 Markdown 与 DOCX", async ({ page }) => {
   await page.keyboard.insertText("# 导出标题\n\n正文段落。");
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
-  await page.getByTestId("btn-export").click();
+  await page.getByTestId("btn-menu").click();
   const [md] = await Promise.all([
     page.waitForEvent("download", { timeout: 10_000 }),
-    page.getByTestId("export-md").click(),
+    page.getByTestId("menu-export-md").click(),
   ]);
   expect(md.suggestedFilename()).toMatch(/\.md$/);
 
-  await page.getByTestId("btn-export").click();
+  await page.getByTestId("btn-menu").click();
   const [docx] = await Promise.all([
     page.waitForEvent("download", { timeout: 30_000 }),
-    page.getByTestId("export-docx").click(),
+    page.getByTestId("menu-export-docx").click(),
   ]);
   expect(docx.suggestedFilename()).toMatch(/\.docx$/);
   const path = await docx.path();
@@ -87,8 +87,8 @@ test("导出 PDF 走系统打印（stub window.print）", async ({ page }) => {
   await page.getByTestId("btn-new").click();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
 
-  await page.getByTestId("btn-export").click();
-  await page.getByTestId("export-pdf").click();
+  await page.getByTestId("btn-menu").click();
+  await page.getByTestId("menu-export-pdf").click();
 
   await expect
     .poll(
@@ -107,8 +107,8 @@ test("预览主题 CSS 可配置并即时生效", async ({ page }) => {
   await page.keyboard.insertText("主题测试");
 
   // 打印主题入口在导出菜单里（不设独立设置页）
-  await page.getByTestId("btn-export").click();
-  await page.getByTestId("export-theme").click();
+  await page.getByTestId("btn-menu").click();
+  await page.getByTestId("menu-theme").click();
   await page.getByTestId("preview-css-input").fill(
     ".md-preview-content { color: rgb(1, 2, 3); }",
   );
@@ -127,10 +127,10 @@ test("DOCX 导出后可以再导入（闭环）", async ({ page }) => {
   await page.keyboard.insertText("# 导出标题\n\n正文段落。");
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
-  await page.getByTestId("btn-export").click();
+  await page.getByTestId("btn-menu").click();
   const [docx] = await Promise.all([
     page.waitForEvent("download", { timeout: 30_000 }),
-    page.getByTestId("export-docx").click(),
+    page.getByTestId("menu-export-docx").click(),
   ]);
   const path = await docx.path();
   expect(path).toBeTruthy();
@@ -138,7 +138,7 @@ test("DOCX 导出后可以再导入（闭环）", async ({ page }) => {
   // 用导出的 DOCX 反向导入
   await page.getByTestId("import-input").setInputFiles(path!);
   await expect(page.getByTestId("editor-title")).toHaveText("导出标题", { timeout: 15_000 });
-  await expect(page.locator(".cm-line.cm-ir-h1").first()).toContainText("导出标题", {
+  await expect(page.getByTestId("md-preview").locator("h1").first()).toContainText("导出标题", {
     timeout: 10_000,
   });
 });

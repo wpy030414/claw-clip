@@ -48,6 +48,7 @@ export const useSettingsStore = create<SettingsState>()(
         motion: s.motion,
         fontSize: s.fontSize,
         previewCss: s.previewCss,
+        viewMode: s.viewMode,
       }),
     },
   ),

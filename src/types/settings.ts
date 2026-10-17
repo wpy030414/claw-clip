@@ -20,6 +20,8 @@ export interface Settings {
   fontSize: number;
   /** 预览/打印主题 CSS（追加在内置排版样式之后；空串使用内置样式）。 */
   previewCss: string;
+  /** 编辑工作区视图：仅编辑 / 编辑+预览分屏 / 仅预览。 */
+  viewMode: "edit" | "split" | "preview";
 }
 
 /** 默认设置。seedColor = #FFAACC（桃粉，对齐旧 Element Plus primary=pink）。 */
@@ -31,4 +33,5 @@ export const DEFAULT_SETTINGS: Settings = {
   motion: "expressive",
   fontSize: 16,
   previewCss: "",
+  viewMode: "split",
 };

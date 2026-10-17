@@ -1,28 +1,37 @@
 /**
- * EditorPane：Typora 式单主区编辑器。
+ * EditorPane：Markdown 编辑工作区（参考 markdownassistant 的核心布局）。
  *
- * 顶栏：返回（移动端）/ 标题 / 自动保存态 / 字数 / 编辑⇄浏览 / 导出 / 附件 / 收藏 / 删除。
- * - 编辑：完整 Markdown 源码（等宽）
- * - 浏览：轻量 IR（隐藏非当前行的标记与语法，仍可直接写）
+ * 顶栏：返回（移动端）/ 标题与状态 / 编辑·分屏·预览 / 收藏 / 更多菜单。
+ * 工具栏：标题、粗斜体、删除线、行内代码、引用、列表、任务、代码块、链接、图片、表格、公式、分隔线。
+ * 主区：左源码（CodeMirror）+ 右实时预览（markdown-it），编辑仍保持 Typora 式自动保存。
  *
- * 保存：纯防抖自动保存（700ms），**没有手动保存入口**；切笔记/卸载立即落库。
- * 导出：MD、DOCX、打印（PDF）；打印根与导出共用 markdown-it 渲染结果。
+ * 保存：纯防抖自动保存（700ms），没有手动保存入口；切笔记/卸载立即落库。
+ * 导出：MD / HTML / DOCX / 打印（PDF）；打印根与预览共用同一份渲染结果。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { M3eIconButton } from "@/components/m3e";
 import { MarkdownEditor, type MarkdownEditorHandle } from "@/components/editor/MarkdownEditor";
+import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
+import type { MarkdownCommand } from "@/components/editor/markdownCommands";
 import { MarkdownPreview } from "@/components/preview/MarkdownPreview";
 import { toastError, toastInfo, toastSuccess } from "@/components/common/Snackbar";
 import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
+import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore, type OutlineItem } from "@/stores/uiStore";
 import { composePreviewCss } from "@/features/preview/themes";
-import { saveBlob } from "@/data/blobStore";
-import { downloadBlob, downloadText, htmlToDocx, safeFilename } from "@/data/exchange";
+import { hydrateMarkdown, releaseBlobUrls, saveBlob } from "@/data/blobStore";
+import {
+  buildHtmlDocument,
+  downloadBlob,
+  downloadText,
+  htmlToDocx,
+  safeFilename,
+} from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
 import { setActiveEditor } from "./activeEditor";
+import "@/features/editor/editor.css";
 
 interface Props {
   noteId: string;
@@ -33,7 +42,7 @@ interface Props {
 }
 
 type SaveState = "idle" | "saving" | "saved";
-type ViewMode = "edit" | "browse";
+type ViewMode = "edit" | "split" | "preview";
 
 export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const { value, loading, onChange } = useMarkdownSession(noteId);
@@ -41,19 +50,30 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const toggleStar = useNotesStore((s) => s.toggleStar);
   const remove = useNotesStore((s) => s.remove);
   const previewCss = useSettingsStore((s) => s.previewCss);
+  const fontsize = useSettingsStore((s) => s.fontSize);
+  const viewMode = useSettingsStore((s) => s.viewMode);
+  const resolvedScheme = useSettingsStore((s) => s.resolvedScheme);
   const setSetting = useSettingsStore((s) => s.set);
+  const toggleScheme = useSettingsStore((s) => s.toggleScheme);
   const setOutline = useUiStore((s) => s.setOutline);
+  const isDesktop = useIsDesktop();
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [mode, setMode] = useState<ViewMode>("browse");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [themePanel, setThemePanel] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const [printRequested, setPrintRequested] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
+  // 移动端没有横向空间：split 退化为纯编辑，仍可手动切到预览
+  const effectiveView: ViewMode = !isDesktop && viewMode === "split" ? "edit" : viewMode;
+  const showPreview = effectiveView !== "edit";
+
   const wordCount = useMemo(() => countWords(value), [value]);
-  const { html, ready: htmlReady } = useRenderedMarkdown(value);
+  const { html, ready: htmlReady } = useRenderedMarkdown(
+    value,
+    showPreview || printRequested || themePanel,
+  );
   const css = useMemo(() => composePreviewCss(previewCss), [previewCss]);
   const title = activeNote?.title ?? "无标题";
 
@@ -81,16 +101,30 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     return () => setOutline([]);
   }, [value, setOutline]);
 
-  // 切笔记重置局部状态
+  // 切笔记：关闭浮层并回收上一篇笔记的 object URL
   useEffect(() => {
     setSaveState("idle");
-    setExportOpen(false);
+    setMenuOpen(false);
     setThemePanel(false);
   }, [noteId]);
+
+  useEffect(() => {
+    return () => releaseBlobUrls();
+  }, [noteId]);
+
+  // 从隐藏/窄栏切回源码时让 CodeMirror 重算布局
+  useEffect(() => {
+    if (effectiveView === "edit" || effectiveView === "split") {
+      const t = requestAnimationFrame(() => editorRef.current?.measure());
+      return () => cancelAnimationFrame(t);
+    }
+    return undefined;
+  }, [effectiveView]);
 
   const handleStar = () => void toggleStar(noteId);
 
   const handleDelete = async () => {
+    setMenuOpen(false);
     if (!window.confirm("删除这条笔记？附件也会一并删除。")) return;
     await remove(noteId);
     onBack?.();
@@ -111,8 +145,18 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     [noteId],
   );
 
-  const handleExport = async (kind: "md" | "docx" | "pdf" | "theme") => {
-    setExportOpen(false);
+  /** 导出 HTML/DOCX 时若当前没有可见预览，按需渲染一次（不改变视图状态）。 */
+  const renderForExport = async (): Promise<string> => {
+    if (htmlReady) return html;
+    const [{ renderMarkdown }, hydrated] = await Promise.all([
+      import("@/utils/markdownRender"),
+      hydrateMarkdown(value),
+    ]);
+    return renderMarkdown(hydrated);
+  };
+
+  const handleExport = async (kind: "md" | "html" | "docx" | "pdf" | "theme") => {
+    setMenuOpen(false);
     if (kind === "theme") {
       setThemePanel((v) => !v);
       return;
@@ -123,8 +167,14 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         toastSuccess("已导出 Markdown");
         return;
       }
+      if (kind === "html") {
+        const doc = await buildHtmlDocument(title, await renderForExport(), css);
+        downloadText(safeFilename(title, "html"), doc, "text/html");
+        toastSuccess("已导出 HTML");
+        return;
+      }
       if (kind === "docx") {
-        const blob = await htmlToDocx(html, title);
+        const blob = await htmlToDocx(await renderForExport(), title);
         downloadBlob(safeFilename(title, "docx"), blob);
         toastSuccess("已导出 DOCX");
         return;
@@ -151,73 +201,171 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     return () => clearTimeout(timer);
   }, [printRequested, htmlReady, title]);
 
+  const runCommand = (command: MarkdownCommand) => {
+    if (isDesktop && effectiveView === "preview") setSetting("viewMode", "split");
+    if (!isDesktop && effectiveView === "preview") setSetting("viewMode", "edit");
+    editorRef.current?.applyCommand(command);
+    requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
+  const changeView = (next: ViewMode) => {
+    setSetting("viewMode", next);
+    requestAnimationFrame(() => {
+      if (next !== "preview") editorRef.current?.focus();
+      else editorRef.current?.measure();
+    });
+  };
+
   const saveLabel =
     saveState === "saving" ? "自动保存中…" : saveState === "saved" ? "已保存" : "已就绪";
 
   return (
-    <div className="editor-pane" data-testid="editor-pane">
-      <div className="editor-topbar" data-testid="editor-topbar">
+    <div className="editor-pane" data-testid="editor-pane" data-view={effectiveView}>
+      <header className="editor-topbar" data-testid="editor-topbar">
         {onBack && (
-          <M3eIconButton onClick={onBack} aria-label="返回" data-testid="btn-back">
+          <button
+            type="button"
+            className="editor-icon-btn"
+            onClick={onBack}
+            aria-label="返回"
+            data-testid="btn-back"
+          >
             <span className="material-symbols-outlined">arrow_back</span>
-          </M3eIconButton>
+          </button>
         )}
-        <span className="editor-title" data-testid="editor-title">
-          {title}
-        </span>
-        <span className="editor-meta">
-          <span className="editor-save-state" data-testid="save-state">
-            {saveLabel}
-          </span>
-          <span className="editor-word-count" data-testid="word-count">
-            {wordCount} 字
-          </span>
-        </span>
 
-        <M3eIconButton
-          data-testid="btn-mode"
-          aria-label={mode === "browse" ? "切换到源码编辑" : "切换到浏览模式"}
-          data-mode={mode}
-          onClick={() => setMode((m) => (m === "browse" ? "edit" : "browse"))}
+        <div className="editor-title-block">
+          <span className="editor-title" data-testid="editor-title">
+            {title}
+          </span>
+          <span className="editor-meta">
+            <span className="editor-save-state" data-testid="save-state">
+              {saveLabel}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="editor-word-count" data-testid="word-count">
+              {wordCount} 字
+            </span>
+          </span>
+        </div>
+
+        <div className="view-switch" role="group" aria-label="视图模式">
+          <button
+            type="button"
+            data-testid="btn-view-edit"
+            data-active={effectiveView === "edit" ? "true" : "false"}
+            title="仅编辑"
+            aria-label="仅编辑"
+            onClick={() => changeView("edit")}
+          >
+            <span className="material-symbols-outlined">edit_note</span>
+          </button>
+          {isDesktop && (
+            <button
+              type="button"
+              data-testid="btn-view-split"
+              data-active={effectiveView === "split" ? "true" : "false"}
+              title="编辑 + 实时预览"
+              aria-label="编辑 + 实时预览"
+              onClick={() => changeView("split")}
+            >
+              <span className="material-symbols-outlined">vertical_split</span>
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="btn-view-preview"
+            data-active={effectiveView === "preview" ? "true" : "false"}
+            title="仅预览"
+            aria-label="仅预览"
+            onClick={() => changeView("preview")}
+          >
+            <span className="material-symbols-outlined">visibility</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          className="editor-icon-btn"
+          onClick={handleStar}
+          aria-label={activeNote?.starred ? "取消收藏" : "收藏"}
+          data-testid="btn-star"
+          data-starred={activeNote?.starred ? "true" : "false"}
         >
           <span className="material-symbols-outlined">
-            {mode === "browse" ? "code" : "visibility"}
+            {activeNote?.starred ? "star" : "star_border"}
           </span>
-        </M3eIconButton>
+        </button>
 
-        <div className="editor-export">
-          <M3eIconButton
-            data-testid="btn-export"
-            aria-label="导出"
-            onClick={() => setExportOpen((v) => !v)}
+        <div className="editor-menu-wrap">
+          <button
+            type="button"
+            className="editor-icon-btn"
+            aria-label="更多操作"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            data-testid="btn-menu"
+            onClick={() => setMenuOpen((v) => !v)}
           >
-            <span className="material-symbols-outlined">download</span>
-          </M3eIconButton>
-          {exportOpen && (
-            <div className="export-menu" role="menu" data-testid="export-menu">
-              <button type="button" role="menuitem" data-testid="export-md" onClick={() => void handleExport("md")}>
-                Markdown (.md)
-              </button>
-              <button type="button" role="menuitem" data-testid="export-docx" onClick={() => void handleExport("docx")}>
-                Word (.docx)
-              </button>
-              <button type="button" role="menuitem" data-testid="export-pdf" onClick={() => void handleExport("pdf")}>
-                打印 / PDF
-              </button>
-              <button type="button" role="menuitem" data-testid="export-theme" onClick={() => void handleExport("theme")}>
-                打印主题…
-              </button>
-            </div>
+            <span className="material-symbols-outlined">more_horiz</span>
+          </button>
+          {menuOpen && (
+            <>
+              <div
+                className="editor-menu-backdrop"
+                aria-hidden="true"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className="editor-menu" role="menu" data-testid="editor-menu">
+                <div className="editor-menu-label">导出</div>
+                <button type="button" role="menuitem" data-testid="menu-export-md" onClick={() => void handleExport("md")}>
+                  <span className="material-symbols-outlined">description</span> Markdown (.md)
+                </button>
+                <button type="button" role="menuitem" data-testid="menu-export-html" onClick={() => void handleExport("html")}>
+                  <span className="material-symbols-outlined">web</span> HTML (.html)
+                </button>
+                <button type="button" role="menuitem" data-testid="menu-export-docx" onClick={() => void handleExport("docx")}>
+                  <span className="material-symbols-outlined">article</span> Word (.docx)
+                </button>
+                <button type="button" role="menuitem" data-testid="menu-export-pdf" onClick={() => void handleExport("pdf")}>
+                  <span className="material-symbols-outlined">print</span> 打印 / PDF
+                </button>
+                <div className="editor-menu-sep" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-attach"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <span className="material-symbols-outlined">image</span> 插入图片 / 附件
+                </button>
+                <button type="button" role="menuitem" data-testid="menu-theme" onClick={() => void handleExport("theme")}>
+                  <span className="material-symbols-outlined">palette</span> 打印主题…
+                </button>
+                <button type="button" role="menuitem" data-testid="menu-scheme" onClick={() => { toggleScheme(); setMenuOpen(false); }}>
+                  <span className="material-symbols-outlined">
+                    {resolvedScheme === "dark" ? "light_mode" : "dark_mode"}
+                  </span>
+                  {resolvedScheme === "dark" ? "切换到浅色" : "切换到深色"}
+                </button>
+                <div className="editor-menu-sep" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="editor-menu-danger"
+                  data-testid="menu-delete"
+                  onClick={() => void handleDelete()}
+                >
+                  <span className="material-symbols-outlined">delete</span> 删除笔记
+                </button>
+              </div>
+            </>
           )}
         </div>
 
-        <M3eIconButton
-          onClick={() => fileInputRef.current?.click()}
-          aria-label="插入图片或附件"
-          data-testid="btn-attach"
-        >
-          <span className="material-symbols-outlined">image</span>
-        </M3eIconButton>
         <input
           ref={fileInputRef}
           type="file"
@@ -231,29 +379,22 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
             void insertFiles(files);
           }}
         />
+      </header>
 
-        <M3eIconButton
-          onClick={handleStar}
-          aria-label="收藏"
-          data-testid="btn-star"
-          data-starred={activeNote?.starred ? "true" : "false"}
-        >
-          <span className="material-symbols-outlined">
-            {activeNote?.starred ? "star" : "star_border"}
-          </span>
-        </M3eIconButton>
-        <M3eIconButton onClick={() => void handleDelete()} aria-label="删除" data-testid="btn-delete">
-          <span className="material-symbols-outlined">delete</span>
-        </M3eIconButton>
-      </div>
+      <MarkdownToolbar onCommand={runCommand} />
 
       {themePanel && (
         <div className="theme-panel" data-testid="theme-panel">
           <div className="theme-panel-header">
             <strong>打印主题 CSS</strong>
-            <button type="button" onClick={() => setSetting("previewCss", "")}>
-              恢复内置
-            </button>
+            <span className="theme-panel-actions">
+              <button type="button" onClick={() => setSetting("previewCss", "")}>
+                恢复内置
+              </button>
+              <button type="button" onClick={() => setThemePanel(false)}>
+                关闭
+              </button>
+            </span>
           </div>
           <textarea
             data-testid="preview-css-input"
@@ -265,25 +406,36 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         </div>
       )}
 
-      <div className="editor-canvas">
-        {!loading && (
-          <MarkdownEditor
-            key={noteId}
-            ref={(handle) => {
-              // 载入完成前编辑器不挂载，用回调 ref 保证句柄在真正挂载时注册（供大纲跳转）
-              editorRef.current = handle;
-              setActiveEditor(handle);
-            }}
-            value={value}
-            onChange={handleChange}
-            onFiles={(files) => void insertFiles(files)}
-            ir={mode === "browse"}
-          />
-        )}
-        {loading && (
-          <div className="editor-loading-overlay" data-testid="editor-loading">
-            载入中…
-          </div>
+      <div className="editor-workspace" data-view={effectiveView}>
+        <section className="editor-source-pane" data-testid="source-pane">
+          {!loading && (
+            <MarkdownEditor
+              key={noteId}
+              ref={(handle) => {
+                editorRef.current = handle;
+                setActiveEditor(handle);
+              }}
+              value={value}
+              onChange={handleChange}
+              onFiles={(files) => void insertFiles(files)}
+              fontSize={fontsize}
+            />
+          )}
+          {loading && (
+            <div className="editor-loading-overlay" data-testid="editor-loading">
+              载入中…
+            </div>
+          )}
+        </section>
+
+        {showPreview && (
+          <section className="editor-preview-pane" data-testid="preview-pane">
+            {htmlReady ? (
+              <MarkdownPreview html={html} css={css} testId="md-preview" />
+            ) : (
+              <div className="editor-preview-loading">渲染中…</div>
+            )}
+          </section>
         )}
       </div>
 

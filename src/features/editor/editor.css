@@ -1,5 +1,11 @@
 /**
- * 编辑器面板样式。颜色全部消费 M3E --md-sys-color-* token，明暗自动跟随。
+ * 编辑工作区样式（参考 markdownassistant 的干净双栏布局）。
+ * 颜色全部消费 M3E --md-sys-color-* token，明暗自动跟随。
+ *
+ * 布局：
+ *   topbar（标题 / 视图切换 / 收藏 / 更多）
+ *   toolbar（格式命令）
+ *   workspace（左源码 · 右实时预览，按 data-view 切换）
  */
 
 .editor-pane {
@@ -12,22 +18,32 @@
   color: var(--md-sys-color-on-surface);
 }
 
+/* ---------------- 顶栏 ---------------- */
+
 .editor-topbar {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  min-height: var(--topbar-height);
-  padding: 0 0.75rem;
+  gap: 8px;
+  height: 56px;
+  padding: 0 12px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container);
+  background: var(--md-sys-color-surface);
+}
+
+.editor-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-right: 8px;
 }
 
 .editor-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 1.02rem;
+  font-size: 0.95rem;
   font-weight: 600;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -36,58 +52,300 @@
 .editor-meta {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  font-size: 0.8rem;
+  gap: 6px;
+  font-size: 0.72rem;
   color: var(--md-sys-color-on-surface-variant);
-  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .editor-save-state {
-  min-width: 3.5em;
-  text-align: right;
+  min-width: 3.4em;
 }
 
-.editor-topbar .material-symbols-outlined {
-  font-size: 20px;
+.editor-icon-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* 导出下拉 */
-.editor-export {
+.editor-icon-btn:hover {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+}
+
+.editor-icon-btn .material-symbols-outlined {
+  font-size: 21px;
+}
+
+.editor-icon-btn[data-starred="true"] {
+  color: var(--md-sys-color-primary);
+}
+
+/* 视图切换分段控件 */
+.view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container-high);
+  flex-shrink: 0;
+}
+
+.view-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 28px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+
+.view-switch button .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.view-switch button:hover {
+  color: var(--md-sys-color-on-surface);
+}
+
+.view-switch button[data-active="true"] {
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+/* 更多菜单 */
+.editor-menu-wrap {
   position: relative;
   display: flex;
+  flex-shrink: 0;
 }
 
-.export-menu {
+.editor-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-toolbar) - 1);
+}
+
+.editor-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   right: 0;
   z-index: var(--z-toolbar);
   display: flex;
   flex-direction: column;
-  min-width: 168px;
+  min-width: 224px;
   padding: 6px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--md-sys-color-surface-container-high);
-  box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 20%);
 }
 
-.export-menu button {
+.editor-menu-label {
+  padding: 6px 10px 4px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.editor-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   border: none;
+  border-radius: 9px;
   background: transparent;
   color: inherit;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   cursor: pointer;
 }
 
-.export-menu button:hover {
+.editor-menu button:hover {
   background: var(--md-sys-color-surface-container-highest);
 }
 
-/* 打印主题面板 */
+.editor-menu button .material-symbols-outlined {
+  font-size: 19px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.editor-menu-sep {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--md-sys-color-outline-variant);
+}
+
+.editor-menu-danger {
+  color: var(--md-sys-color-error, #b3261e) !important;
+}
+
+.editor-menu-danger .material-symbols-outlined {
+  color: inherit !important;
+}
+
+/* ---------------- 工具栏 ---------------- */
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.editor-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.editor-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.editor-tool-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.editor-tool-btn:hover {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+}
+
+.editor-tool-btn .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.editor-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--md-sys-color-outline-variant);
+}
+
+/* ---------------- 工作区 ---------------- */
+
+.editor-workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.editor-workspace[data-view="split"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.editor-source-pane,
+.editor-preview-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-source-pane {
+  background: var(--md-sys-color-surface);
+}
+
+.editor-workspace[data-view="preview"] .editor-source-pane {
+  display: none;
+}
+
+.editor-workspace[data-view="split"] .editor-preview-pane {
+  border-left: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.editor-workspace[data-view="preview"] .editor-preview-pane {
+  background: var(--md-sys-color-surface);
+}
+
+.editor-preview-pane {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.md-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.md-editor-host .cm-editor {
+  height: 100%;
+}
+
+.md-editor-host .cm-editor.cm-focused {
+  outline: none;
+}
+
+.md-preview {
+  min-height: 100%;
+}
+
+.editor-preview-loading {
+  padding: 40px 32px;
+  font-size: 0.86rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* 载入遮罩 */
+.editor-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--md-sys-color-surface) 70%, transparent);
+  color: var(--md-sys-color-on-surface-variant);
+  z-index: var(--z-toolbar);
+  backdrop-filter: blur(2px);
+}
+
+/* ---------------- 打印主题面板 ---------------- */
+
 .theme-panel {
   flex-shrink: 0;
   padding: 10px 14px;
@@ -99,8 +357,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
   font-size: 0.86rem;
+}
+
+.theme-panel-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .theme-panel-header button {
@@ -130,53 +394,8 @@
   outline: none;
 }
 
-/* 画布 */
-.editor-canvas {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-}
+/* ---------------- 打印根 ---------------- */
 
-.editor-canvas--preview {
-  overflow-y: auto;
-  background: var(--md-sys-color-surface-container-low);
-}
-
-.md-editor-host {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.md-editor-host .cm-editor {
-  height: 100%;
-}
-
-.md-editor-host .cm-editor.cm-focused {
-  outline: none;
-}
-
-.md-preview {
-  min-height: 100%;
-}
-
-/* 载入遮罩 */
-.editor-loading-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--md-sys-color-surface) 70%, transparent);
-  color: var(--md-sys-color-on-surface-variant);
-  z-index: var(--z-toolbar);
-  backdrop-filter: blur(2px);
-}
-
-/* 打印根：屏幕外，打印时占满整页 */
 #print-root {
   position: absolute;
   left: -10000px;
@@ -205,91 +424,32 @@
   }
 }
 
-/* ---------------- 轻量 IR（浏览模式） ---------------- */
+/* ---------------- 窄屏 ---------------- */
 
-.md-editor-host--source .cm-scroller {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
-}
+@media (max-width: 899px) {
+  .editor-topbar {
+    height: 52px;
+    padding: 0 8px;
+    gap: 4px;
+  }
 
-.md-editor-host--browse .cm-scroller {
-  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC",
-    "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
-  font-size: 1.05em;
-}
+  .editor-meta {
+    font-size: 0.68rem;
+  }
 
-.md-editor-host .cm-content {
-  max-width: 860px;
-  margin: 0 auto;
-}
+  .editor-workspace[data-view="split"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-.md-editor-host--source .cm-content {
-  max-width: none;
-}
+  .editor-toolbar {
+    padding: 0 6px;
+  }
 
-.cm-line.cm-ir-h1 {
-  font-size: 1.9em;
-  font-weight: 700;
-  line-height: 1.35;
-  margin: 0.5em 0 0.2em;
-}
-.cm-line.cm-ir-h2 {
-  font-size: 1.52em;
-  font-weight: 700;
-  line-height: 1.4;
-  margin: 0.45em 0 0.15em;
-}
-.cm-line.cm-ir-h3 {
-  font-size: 1.26em;
-  font-weight: 700;
-  margin: 0.35em 0 0.1em;
-}
-.cm-line.cm-ir-h4 { font-size: 1.1em; font-weight: 700; }
-.cm-line.cm-ir-h5, .cm-line.cm-ir-h6 { font-size: 1em; font-weight: 700; }
+  .md-editor-host .cm-content {
+    padding: 20px 18px 45vh;
+  }
 
-.cm-line.cm-ir-quote {
-  border-left: 3px solid var(--md-sys-color-primary, #6750a4);
-  padding-left: 12px;
-  color: var(--md-sys-color-on-surface-variant, #49454f);
-  font-style: italic;
-}
-
-.cm-line.cm-ir-list { padding-left: 4px; }
-
-.cm-ir-bullet {
-  color: var(--md-sys-color-primary, #6750a4);
-  padding: 0 8px 0 2px;
-  font-weight: 700;
-}
-
-.cm-ir-task {
-  vertical-align: middle;
-  margin-right: 8px;
-  accent-color: var(--md-sys-color-primary, #6750a4);
-}
-
-.cm-ir-image {
-  display: block;
-  max-width: 100%;
-  max-height: 460px;
-  margin: 10px 0;
-  border-radius: 8px;
-}
-
-.cm-ir-strong { font-weight: 700; }
-.cm-ir-em { font-style: italic; }
-.cm-ir-strike { text-decoration: line-through; opacity: 0.75; }
-.cm-ir-mark {
-  background: var(--md-sys-color-tertiary-container, #ffd8e4);
-  border-radius: 3px;
-}
-.cm-ir-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9em;
-  background: var(--md-sys-color-surface-container-high, #ece6f0);
-  border-radius: 4px;
-  padding: 0 3px;
-}
-.cm-ir-link {
-  color: var(--md-sys-color-primary, #6750a4);
-  text-decoration: underline;
+  .editor-tool-btn {
+    min-width: 30px;
+  }
 }

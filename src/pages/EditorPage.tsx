@@ -20,6 +20,7 @@ export function EditorPage() {
 
   return (
     <EditorPane
+      key={noteId}
       noteId={noteId}
       onBack={isDesktop ? undefined : backToList}
       onDeleted={backToList}

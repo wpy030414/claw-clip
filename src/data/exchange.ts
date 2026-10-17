@@ -11,6 +11,9 @@
  * 不进入首屏包体。
  */
 
+import hljsLight from "highlight.js/styles/github.css?inline";
+import hljsDark from "highlight.js/styles/github-dark.css?inline";
+
 export interface ImportedDocument {
   title: string;
   content: string;
@@ -398,4 +401,72 @@ export async function importDocument(file: File): Promise<ImportedDocument> {
     return { title, content: await pdfToMarkdown(file) };
   }
   throw new Error(`不支持的文件类型：.${ext || "未知"}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* HTML 导出                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 生成可单独打开的 HTML 文档（内嵌预览主题与代码高亮样式）。
+ *
+ * 公式说明：KaTeX 的 CSS 依赖自带字体文件，无法在单文件里零成本内联。
+ * 这里关闭 `.katex-html`、改用 KaTeX 同时输出的原生 MathML（现代浏览器均支持），
+ * 因此导出的 HTML 不依赖 CDN、也不需要 KaTeX 字体即可显示公式。
+ */
+export async function buildHtmlDocument(
+  title: string,
+  bodyHtml: string,
+  previewCss: string,
+): Promise<string> {
+  const safeTitle = title.replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
+  );
+  return `<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${safeTitle}</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --md-sys-color-on-surface: #1d1b20;
+  --md-sys-color-on-surface-variant: #49454f;
+  --md-sys-color-primary: #6750a4;
+  --md-sys-color-tertiary-container: #ffd8e4;
+  --md-sys-color-outline-variant: #cac4d0;
+  --md-sys-color-surface-container-low: #f7f2fa;
+  --md-sys-color-surface-container: #f3edf7;
+  --md-sys-color-surface-container-high: #ece6f0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-sys-color-on-surface: #e6e1e5;
+    --md-sys-color-on-surface-variant: #cac4d0;
+    --md-sys-color-primary: #d0bcff;
+    --md-sys-color-tertiary-container: #633b48;
+    --md-sys-color-outline-variant: #49454f;
+    --md-sys-color-surface-container-low: #1d1b20;
+    --md-sys-color-surface-container: #211f26;
+    --md-sys-color-surface-container-high: #2b2930;
+  }
+  body { background: #121212; }
+}
+html { background: #fff; }
+body { margin: 0; padding: 0; }
+/* 单文件导出：用 KaTeX 的原生 MathML 代替依赖字体的 HTML 渲染 */
+.katex-html { display: none !important; }
+.katex-mathml { display: inline !important; }
+.katex-display .katex-mathml { display: block !important; }
+@media print { body { background: #fff; } }
+</style>
+<style media="(prefers-color-scheme: light)">${hljsLight}</style>
+<style media="(prefers-color-scheme: dark)">${hljsDark}</style>
+<style>${previewCss}</style>
+</head>
+<body>
+<article class="md-preview-content">${bodyHtml}</article>
+</body>
+</html>`;
 }

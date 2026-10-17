@@ -1,15 +1,13 @@
 /**
- * MarkdownEditor：CodeMirror 6 编辑器。
- *
- * 两种显示语义共用同一份源码：
- * - 编辑模式：显示完整 Markdown 源码（等宽字体）
- * - 浏览模式：轻量 IR（`markdownIR.ts`）——光标不在的行隐藏标记并渲染样式，仍可直接写
+ * MarkdownEditor：CodeMirror 6 源码编辑器。
  *
  * 半受控：value 只作为挂载初始文档；切换笔记由父级 key={noteId} 重挂载。
  * 不做 value→doc 回流（回流会打断 CJK 组合输入，实测字符乱序）。
+ *
+ * 工具栏命令通过 `applyCommand` 暴露给上层；参数与纯函数实现见 markdownCommands.ts。
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState } from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -22,7 +20,20 @@ import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
-import { markdownIRExtension } from "./markdownIR";
+import { buildCommand, type MarkdownCommand } from "./markdownCommands";
+
+/** 在 EditorView 上执行一次 Markdown 命令；返回是否产生了改动。 */
+function runInView(view: EditorView, command: MarkdownCommand): boolean {
+  const { from, to } = view.state.selection.main;
+  const { changes, selection } = buildCommand(view.state.doc.toString(), from, to, command);
+  if (changes.length === 0) return false;
+  view.dispatch({
+    changes,
+    selection: { anchor: selection.anchor, head: selection.head },
+    scrollIntoView: true,
+  });
+  return true;
+}
 
 export interface MarkdownEditorHandle {
   focus: () => void;
@@ -31,6 +42,10 @@ export interface MarkdownEditorHandle {
   getSelection: () => string;
   /** 滚动到指定文档位置并把光标放过去（大纲跳转）。 */
   scrollTo: (pos: number) => void;
+  /** 执行工具栏命令（加粗/标题/列表等）。 */
+  applyCommand: (command: MarkdownCommand) => void;
+  /** 从隐藏状态重新显示后重算布局（CodeMirror 需要）。 */
+  measure: () => void;
 }
 
 interface Props {
@@ -39,8 +54,6 @@ interface Props {
   /** 粘贴/拖入文件（图片等）时回调，由上层存 IDB 后插入引用。 */
   onFiles?: (files: File[]) => void;
   fontSize?: number;
-  /** true = 浏览模式（轻量 IR），false = 源码模式。 */
-  ir?: boolean;
 }
 
 /** Markdown 语法高亮：颜色全部走 M3E token，明暗自动跟随。 */
@@ -63,32 +76,40 @@ function themeExtension(fontSize: number) {
   return EditorView.theme({
     "&": {
       height: "100%",
-      backgroundColor: "var(--md-sys-color-surface)",
+      backgroundColor: "transparent",
       color: "var(--md-sys-color-on-surface)",
       fontSize: `${fontSize}px`,
     },
     ".cm-scroller": {
-      lineHeight: "1.85",
+      fontFamily:
+        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "PingFang SC", monospace',
+      lineHeight: "1.75",
       overflow: "auto",
     },
-    ".cm-content": { padding: "24px 8px 50vh", caretColor: "var(--md-sys-color-primary)" },
+    ".cm-content": {
+      padding: "28px 36px 45vh",
+      caretColor: "var(--md-sys-color-primary)",
+      maxWidth: "860px",
+      margin: "0 auto",
+    },
     ".cm-activeLine": { backgroundColor: "transparent" },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
       backgroundColor: "var(--md-sys-color-secondary-container)",
     },
     ".cm-cursor": { borderLeftColor: "var(--md-sys-color-primary)" },
+    "&.cm-focused": { outline: "none" },
+    ".cm-gutters": { display: "none" },
   });
 }
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function MarkdownEditor(
-  { value, onChange, onFiles, fontSize = 16, ir = false },
+  { value, onChange, onFiles, fontSize = 16 },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onFilesRef = useRef(onFiles);
-  const irCompartment = useRef(new Compartment()).current;
   onChangeRef.current = onChange;
   onFilesRef.current = onFiles;
 
@@ -96,6 +117,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
     if (!hostRef.current) return;
     const view = new EditorView({
       parent: hostRef.current,
+      // ★ 必须显式指定 root：EditorView 默认用 getRoot(parent)，而 getRoot 会沿
+      //   assignedSlot 走到 <m3e-theme> 的 ShadowRoot，把样式表挂进 Shadow DOM；
+      //   编辑器是 light-DOM 插槽内容，Shadow DOM 里的规则匹配不到它，导致
+      //   CodeMirror 基础样式（等宽字体/行高/内边距/焦点描边）全部失效。
+      root: document,
       state: EditorState.create({
         doc: value,
         extensions: [
@@ -106,8 +132,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
           EditorView.lineWrapping,
           markdown(),
           syntaxHighlighting(mdHighlight),
-          placeholder("开始写点什么吧……"),
-          keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+          placeholder("开始写点什么吧……支持 Markdown、公式 $E=mc^2$ 与 Mermaid 图表"),
+          keymap.of([
+            { key: "Mod-b", run: (view) => runInView(view, "bold") },
+            { key: "Mod-i", run: (view) => runInView(view, "italic") },
+            { key: "Mod-k", run: (view) => runInView(view, "link") },
+            ...defaultKeymap,
+            ...historyKeymap,
+            ...searchKeymap,
+            indentWithTab,
+          ]),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString());
           }),
@@ -127,7 +161,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
               return true;
             },
           }),
-          irCompartment.of(ir ? markdownIRExtension : []),
           themeExtension(fontSize),
         ],
       }),
@@ -137,18 +170,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
       view.destroy();
       viewRef.current = null;
     };
-    // 只在挂载时创建；IR/字号变化走 reconfigure
+    // 只在挂载时创建；value/fontSize 变化不重挂载（半受控）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 浏览/源码模式切换：热重配置，不重建文档、不丢撤销历史
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({
-      effects: irCompartment.reconfigure(ir ? markdownIRExtension : []),
-    });
-  }, [ir, irCompartment]);
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
@@ -179,14 +203,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
       });
       view.focus();
     },
+    applyCommand: (command: MarkdownCommand) => {
+      const view = viewRef.current;
+      if (!view) return;
+      if (runInView(view, command)) view.focus();
+    },
+    measure: () => viewRef.current?.requestMeasure(),
   }));
 
   return (
-    <div
-      className={`md-editor-host ${ir ? "md-editor-host--browse" : "md-editor-host--source"}`}
-      data-testid="md-editor"
-      data-mode={ir ? "browse" : "edit"}
-      ref={hostRef}
-    />
+    <div className="md-editor-host" data-testid="md-editor" ref={hostRef} />
   );
 });

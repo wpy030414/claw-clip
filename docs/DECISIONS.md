@@ -288,7 +288,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 
 ---
 
-## ADR-020 · Typora 式单主区 + 轻量 IR + 纯防抖自动保存 ✅
+## ADR-020 · Typora 式单主区 + 轻量 IR + 纯防抖自动保存 ✅（已被 ADR-021 取代）
 
 **背景**：产品方向确定为「几乎和 Typora 一样」——侧栏展示文档/大纲、可收起；主区在源码与浏览模式间切换，
 浏览模式仍能直接写；自动保存防抖，用户不接管。此前实现的「编辑区 + 独立预览页」与 nav rail/分栏被判定为过度设计。
@@ -310,3 +310,78 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 ---
 
 _（后续 ADR 随 S10 验收与性能优化补充：体积预算、命令面板等。）_
+
+---
+
+## ADR-021 · 编辑工作区对标 markdownassistant：源码 + 实时预览 + 格式工具栏 ✅
+
+**背景**：ADR-020 交付的「轻量 IR 浏览模式」在实际使用中被判定为设计失败：IR 只覆盖常见语法，
+公式 / 围栏代码块 / 表格 / 脚注在浏览态仍是源码；同时顶栏因 `editor.css` 从未被 import 而折行、
+编辑器没有版心、CodeMirror 基础样式全部失效（见 ADR-022）。对照组
+[markdownassistant.com](https://www.markdownassistant.com/zh/) 的核心体验更简单也更完整：
+左源码、右实时预览、顶部格式工具栏、导出 MD/HTML/PDF、大纲与明暗主题。
+
+**决策**：
+- **放弃轻量 IR**（删除 `markdownIR.ts`），改为三态视图：`edit` / `split` / `preview`；
+  桌面默认分屏，移动端默认编辑（`split` 在窄屏退化为 `edit`）。视图选择持久化到 `settings.viewMode`。
+- **实时预览**：复用既有 markdown-it 管线（KaTeX / highlight.js / Mermaid），
+  随输入 120ms 防抖渲染；预览与打印、DOCX/HTML 导出共用同一份 HTML。
+- **格式工具栏**：标题 H1–H3、粗体、斜体、删除线、行内代码、引用、无序/有序/任务列表、
+  代码块、链接、图片、表格、行内/块级公式、分隔线。命令实现为纯函数
+  （`markdownCommands.ts`），工具栏与编辑器解耦，可直接单测。
+- **顶栏收敛**：标题与保存状态、三态视图切换、收藏、更多菜单（导出/附件/主题/明暗/删除）。
+- **新增 HTML 导出**：单文件、内嵌预览主题与代码高亮；公式改用 KaTeX 同时输出的原生 MathML，
+  避免导出文件依赖 KaTeX 字体或 CDN。
+
+**理由**：
+- 源码 + 实时预览的语义最简单：不存在「浏览态还能不能写」「当前行标记何时显隐」这类边缘状态，
+  用户永远知道文档真相在哪。
+- markdown-it 管线已经是项目内唯一渲染真相源，实时预览只是把它接到第二个容器，不引入新依赖。
+- 工具栏命令是纯函数，测试成本低；E2E 覆盖「加粗 → 标题 → 预览同步」。
+- HTML 导出补齐了「带走」闭环，且与预览同源，避免「预览一套、导出另一套」。
+
+**后果**：
+- 失去 Typora 式「光标所在行显源码、其余行渲染」的观感；换来确定、可测、与导出完全同源的预览。
+- 移动端无法左右分屏，预览改为整页切换；这是窄屏的合理退化，不是能力缺失。
+- 首屏仍不加载 markdown-it：只有进入分屏/预览或导出时才动态 import。
+- `settings.viewMode` 进入 localStorage 持久化；旧用户没有该字段时由默认值 `split` 兜底。
+
+**验证**：`pnpm run test:unit` 161 例（新增 `markdownCommands.spec.ts` 16 例）；
+`pnpm run test:e2e` 27 例（新增工具栏 / 快捷键 / 视图切换 / HTML 导出 4 例），全绿。
+
+---
+
+## ADR-022 · CodeMirror 6 在 `<m3e-theme>` 下必须显式 `root: document` ✅【实测】
+
+**背景**：重新实现编辑工作区时发现 CodeMirror 的**全部基础样式**都没生效：正文不是等宽字体、
+没有内边距与行高、编辑器高度异常、存在蓝色焦点描边。检查 `document.head` 找不到任何
+`.cm-scroller` / `.cm-content` 规则，`document` 上也没有 `style-mod` 的 StyleSet 符号。
+
+**根因**：`EditorView` 构造时 `this._root = config.root || getRoot(config.parent) || document`；
+`getRoot(node)` 的实现是：
+
+```js
+while (node) {
+  if (node.nodeType === 9 || (node.nodeType === 11 && node.host)) return node;
+  node = node.assignedSlot || node.parentNode;
+}
+```
+
+我们的 App 渲染在 `<m3e-theme>` 的 light DOM 中，而 `m3e-theme` 的 ShadowRoot 里有 `<slot>`。
+从编辑器宿主向上走时，`node.assignedSlot` 会指进 `<m3e-theme>` 的 ShadowRoot，
+于是 `getRoot` 返回 **ShadowRoot**。`style-mod` 把 CodeMirror 的样式表 adopt 到该 ShadowRoot，
+但编辑器 DOM 是 light DOM 插槽内容，Shadow DOM 内的规则**不会应用到 slotted content**，
+所以样式全部失效。这是「Shadow DOM 样式作用域」与「Web Component 插槽」的交互陷阱，
+不是 M3E 的 bug，也不是 CodeMirror 的 bug。
+
+**决策**：创建 `EditorView` 时显式传 `root: document`，让样式表挂到文档根。
+
+**验证**（实测）：
+- 修复前 `.cm-content` 计算样式为 `padding: 0px`、`font-family: Roboto...`；
+  修复后为 `padding: 28px 36px`、`font-family: ui-monospace...`。
+- `document` 上出现 CodeMirror 的样式 `<style>`；编辑器焦点描边消失（由主题 `&.cm-focused { outline: none }` 接管）。
+- E2E 的编辑、预览、附件水合全部通过。
+
+**经验**：任何在 Shadow DOM 宿主内渲染、但自身位于 light DOM 的第三方 UI 库，
+都要检查它如何定位「样式根」。命令式库默认 `getRootNode()` / `assignedSlot` 的行为在插槽场景下
+会把样式放进错误的树。
