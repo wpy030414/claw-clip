@@ -41,6 +41,8 @@ export interface MarkdownEditorHandle {
   focus: () => void;
   getValue: () => string;
   insertText: (text: string) => void;
+  /** 整篇替换（格式化用）：保留撤销历史，光标尽量停在原偏移处。 */
+  replaceAll: (text: string) => void;
   getSelection: () => string;
   /** 滚动到指定文档位置并把光标放过去（大纲跳转）。 */
   scrollTo: (pos: number) => void;
@@ -209,6 +211,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
       view.dispatch({
         changes: { from, to, insert: text },
         selection: { anchor: from + text.length },
+      });
+      view.focus();
+    },
+    replaceAll: (text: string) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const head = Math.min(view.state.selection.main.head, text.length);
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        selection: { anchor: head },
       });
       view.focus();
     },

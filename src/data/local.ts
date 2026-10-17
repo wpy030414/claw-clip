@@ -16,7 +16,13 @@ import type { BackupBlob, BackupPayload } from "@/types/backup";
 import { idbReq } from "@/utils/idb";
 import { getAllOf, withTx } from "./db";
 import { base64ToBlob, blobToBase64 } from "./backup";
-import { deleteBlobsOfNote, getBlob, saveBlob } from "./blobStore";
+import {
+  adjustBlobRefs,
+  extractBlobRefIds,
+  getBlob,
+  reconcileBlobRefs,
+  saveBlob,
+} from "./blobStore";
 import { queryNotes, type QueryResult } from "./query";
 import type { DataSource } from "./datasource";
 
@@ -25,12 +31,29 @@ const blobsStore = globalConfig.storeNames.blobs;
 const foldersStore = globalConfig.storeNames.folders;
 
 export class LocalDataSource implements DataSource {
-  /** ★ put = 原地 upsert：同 id 覆盖更新，新 id 插入；永不改 id。返回落库后的 Note。 */
+  /**
+   * ★ put = 原地 upsert：同 id 覆盖更新，新 id 插入；永不改 id。返回落库后的 Note。
+   *
+   * ★ 附件引用计数与笔记写入在**同一事务**内完成：比对新旧正文引用的差集，
+   *   新增 +1、移除 -1，计数归零的 blob 自动删除（无笔记使用即回收）。
+   *   attachmentIds 以正文为准重新反填，避免调用方传入陈旧索引。
+   */
   async upsertNote(note: Note): Promise<Note> {
-    await withTx(notesStore, "readwrite", (tx) =>
-      idbReq(tx.objectStore(notesStore).put(note)),
-    );
-    return note;
+    const next: Note = { ...note, attachmentIds: extractBlobRefIds(note.content) };
+    await withTx([notesStore, blobsStore], "readwrite", async (tx) => {
+      const prev = await idbReq<Note | undefined>(tx.objectStore(notesStore).get(note.id));
+      // 以旧正文为真相源算旧引用（不信任可能陈旧的 attachmentIds）
+      const prevIds = new Set(prev ? extractBlobRefIds(prev.content) : []);
+      const nextIds = new Set(next.attachmentIds);
+      const removed = [...prevIds].filter((id) => !nextIds.has(id));
+      const added = [...nextIds].filter((id) => !prevIds.has(id));
+
+      await adjustBlobRefs(tx, removed, -1);
+      await adjustBlobRefs(tx, added, 1);
+
+      tx.objectStore(notesStore).put(next);
+    });
+    return next;
   }
 
   async getNote(id: string): Promise<Note | undefined> {
@@ -47,12 +70,19 @@ export class LocalDataSource implements DataSource {
     return queryNotes(filter, pageSize, pageOffset);
   }
 
-  /** ★ 先级联删附件 blob，再删笔记本体。 */
+  /**
+   * ★ 删除笔记：在同一事务里按引用计数释放其附件，再删笔记本体。
+   *
+   * 不再按 noteId 批量删除——同一附件可能被多条笔记引用（复制粘贴），
+   * 只有计数归零才真正删除，避免误删其它笔记仍在用的图片。
+   */
   async deleteNote(id: string): Promise<void> {
-    await deleteBlobsOfNote(id);
-    await withTx(notesStore, "readwrite", (tx) =>
-      idbReq(tx.objectStore(notesStore).delete(id)),
-    );
+    await withTx([notesStore, blobsStore], "readwrite", async (tx) => {
+      const prev = await idbReq<Note | undefined>(tx.objectStore(notesStore).get(id));
+      // 以正文为真相源释放引用（附件可被多笔记共享，按计数递减而非按 noteId 盲删）
+      if (prev) await adjustBlobRefs(tx, extractBlobRefIds(prev.content), -1);
+      tx.objectStore(notesStore).delete(id);
+    });
   }
 
   async saveAttachment(noteId: string, file: Blob): Promise<string> {
@@ -61,6 +91,11 @@ export class LocalDataSource implements DataSource {
 
   async getAttachment(id: string): Promise<BlobRecord | undefined> {
     return getBlob(id);
+  }
+
+  /** 全库校准附件引用计数并回收无引用 blob（启动/导入后调用）。 */
+  async reconcileAttachmentRefs(): Promise<{ kept: number; purged: number }> {
+    return reconcileBlobRefs();
   }
 
   // —— 文件夹 ——
@@ -146,6 +181,7 @@ export class LocalDataSource implements DataSource {
       size: b.size,
       data: base64ToBlob(b.base64, b.mime),
       createdAt: Date.now(),
+      refCount: 0, // 真实计数由 reconcileBlobRefs() 按正文重算
     }));
 
     // notes + folders + blobs 分事务写入（各自 store）
@@ -163,6 +199,9 @@ export class LocalDataSource implements DataSource {
       const store = tx.objectStore(blobsStore);
       for (const rec of blobRecords) store.put(rec);
     });
+
+    // 导入的备份可能带有陈旧 attachmentIds / 零引用孤儿：以正文为准重算并回收
+    await reconcileBlobRefs();
 
     return { notes: payload.notes.length, blobs: blobRecords.length };
   }

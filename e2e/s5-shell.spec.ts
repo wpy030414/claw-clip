@@ -15,9 +15,10 @@ test("S5 桌面：页签 + 行级新建 + 笔记树", async ({ page }) => {
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
   await expect(page.getByTestId("nav-bar")).toHaveCount(0);
   await expect(page.getByTestId("sidebar-brand")).toContainText("ClawClip");
-  const logo = page.getByTestId("sidebar-logo");
-  await expect(logo).toBeVisible();
-  await expect(logo).toHaveAttribute("src", /favicon\.ico$/);
+  const title = page.getByTestId("sidebar-title");
+  await expect(title).toBeVisible();
+  await expect(title).toHaveText("ClawClip");
+  await expect(page.getByTestId("sidebar-logo")).toHaveCount(0); // 标题不再携带图标
   const github = page.getByTestId("link-github");
   await expect(github).toHaveAttribute("href", "https://github.com/wpy030414/claw-clip");
   await expect(github).toHaveAttribute("target", "_blank");
@@ -32,10 +33,8 @@ test("S5 桌面：页签 + 行级新建 + 笔记树", async ({ page }) => {
   await expect(themeToggle).toBeVisible();
   const themeIcon = themeToggle.locator(".material-symbols-outlined");
   const beforeIcon = await themeIcon.innerText();
-  const beforeDark = (await logo.getAttribute("data-dark")) === "true";
   await themeToggle.click();
   await expect(themeIcon).not.toHaveText(beforeIcon);
-  await expect(logo).toHaveAttribute("data-dark", beforeDark ? "false" : "true");
 
   // 文档 / 大纲等宽铺满一行
   const [tabsBox, docsBox, outlineBox] = await Promise.all([
@@ -73,6 +72,18 @@ test("S5 移动：笔记树 → 全屏编辑器 → 返回树", async ({ page })
 
   await expect(page.getByTestId("app-sidebar")).toHaveCount(0);
   await expect(page.getByTestId("note-list-empty")).toBeVisible();
+
+  // 移动端首页还原桌面侧栏：品牌行 + 笔记树 + 底部统计/明暗切换
+  await expect(page.getByTestId("sidebar-brand")).toBeVisible();
+  await expect(page.getByTestId("sidebar-title")).toHaveText("ClawClip");
+  await expect(page.getByTestId("link-github")).toBeVisible();
+  await expect(page.getByTestId("note-tree")).toBeVisible();
+  await expect(page.getByTestId("sidebar-footer")).toBeVisible();
+  await expect(page.getByTestId("sidebar-stats")).toContainText(/共 \d+ 个笔记/);
+  await expect(page.getByTestId("btn-theme-toggle")).toBeVisible();
+  // 移动端没有常驻编辑器：不展示大纲页签
+  await expect(page.getByTestId("tab-outline")).toHaveCount(0);
+  await expect(page.getByTestId("tab-docs")).toHaveCount(0);
 
   await page.getByTestId("btn-new").click();
   await page.getByTestId("create-note").click();
@@ -123,4 +134,20 @@ test("侧栏：大纲页签、收起与展开", async ({ page }) => {
   await expect(page.getByTestId("app-sidebar")).toHaveCount(0);
   await page.getByTestId("btn-sidebar-open").click();
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
+});
+
+test("侧栏标题：点击显示 commit hash 前七位，再点一次回到标题", async ({ page }) => {
+  await page.goto("");
+  const title = page.getByTestId("sidebar-title");
+
+  await expect(title).toHaveText("ClawClip");
+  await expect(title).toHaveAttribute("data-mode", "title");
+
+  await title.click();
+  await expect(title).toHaveAttribute("data-mode", "commit");
+  await expect(title).toHaveText(/^([0-9a-f]{7}|unknown)$/);
+
+  await title.click();
+  await expect(title).toHaveText("ClawClip");
+  await expect(title).toHaveAttribute("data-mode", "title");
 });

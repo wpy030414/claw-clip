@@ -652,7 +652,7 @@ M3E token、编辑器与预览。
 
 ---
 
-## ADR-032 · 侧栏品牌行加入网站 logo ✅
+## ADR-032 · 侧栏品牌行加入网站 logo（已废弃，见 ADR-035）
 
 **背景**：品牌行只有等宽文字 `ClawClip` 和 GitHub 图标，缺少与网站 favicon 一致的视觉标识。
 
@@ -697,3 +697,119 @@ logo、等宽标题与底部 bar 的视觉关系。
 
 **验证**：单测断言手写 HTML 与事件属性原样保留；E2E 断言带 `style` 的 `<div>` 与 `<details>`
 在预览中真实生效。
+
+---
+
+## ADR-034 · 附件引用计数：无笔记引用即自动回收 ✅
+
+**背景**：附件原本用 `BlobRecord.noteId` 做删除级联，只有「删除笔记」才会清附件。
+两条路径会长期泄漏 IDB 空间：① 用户从正文删掉图片引用但笔记还在；② 复制粘贴
+`clawclip://` 引用到另一条笔记后，删除原笔记会把共享附件一起删掉（其它笔记裂图）。
+仓库体积与 IndexedDB 占用都需要可回收的附件生命周期。
+
+**决策**：
+- `BlobRecord` 新增 `refCount`，语义是**引用该附件的笔记数**；同一笔记内多处引用只算 1。
+- `LocalDataSource.upsertNote` 在 notes+blobs 的**同一 readwrite 事务**里比对新旧正文引用
+  差集：新增 +1、移除 -1；`deleteNote` 在删除笔记的同一事务里递减其全部引用。
+- 计数归零立刻删除 blob，并 revoke 缓存 object URL；`noteId` 降级为溯源字段，不再参与删除判定。
+- `reconcileBlobRefs()` 以笔记正文为唯一真相源全量校准：重算 `refCount`、修复陈旧
+  `attachmentIds`、回收零引用 blob 与旧版本缺失计数的记录。启动引导（渲染前）与
+  `importAll()` 后各执行一次；失败不阻塞启动。
+- `attachmentIds` 在 `upsertNote` 中由正文重新反填，避免调用方传入陈旧索引污染计数。
+
+**理由**：引用计数把「附件生命周期」与「单条笔记的归属」解耦，复制粘贴、多笔记共享、
+正文撤销编辑都能得到正确结果；事务内更新避免笔记与计数不一致。全量 reconcile 兼作
+旧库迁移（无需 bump DB 版本）与异常残留的兜底。
+
+**后果**：`upsertNote` / `deleteNote` 事务范围扩大到 notes+blobs，写入略有开销（可忽略）；
+启动时多一次全库扫描（笔记量级小）。`saveBlob` 先以 `refCount=0` 落库，若用户在自动保存
+前异常退出，下次启动 reconcile 会把它当孤儿回收。
+
+**验证**：`blobStore.spec.ts`（正文提取/校准/旧记录补计数/孤儿回收）、
+`local.spec.ts`（移除引用即回收、跨笔记共享不误删、同笔记重复引用只计一次、
+导入后重算）、`e2e/s4-attachment.spec.ts`（删除笔记后 blobs store 自动归零）。
+
+---
+
+## ADR-035 · 侧栏标题去掉图标，点击切换显示 commit hash ✅
+
+**背景**：ADR-032 在品牌行标题左侧加入了 favicon 图标。标题本身只是静态文字，
+用户希望标题不携带图标，并能在需要时快速确认当前运行的是哪一次提交。
+
+**决策**：
+- 移除 `sidebar-logo` 图片及其 `data-dark` 反相 CSS，品牌行只保留等宽 `ClawClip`
+  标题与右侧 GitHub 图标。
+- 标题改为 `<button data-testid="sidebar-title">`：首次点击显示当前 commit hash 的
+  前七位（`data-mode="commit"`），再次点击回到标题文字（`data-mode="title"`）。
+- `vite.config.ts` 在 dev/build 启动时执行 `git rev-parse --short=7 HEAD`，通过
+  `define` 注入 `__APP_COMMIT__`；`env.d.ts` 声明全局类型并纳入 `tsconfig.app.json`
+  的 include。无 git 环境或命令失败时降级为 `unknown`。
+- 切换状态只存在组件内存中，不写 URL / localStorage；刷新后回到标题。
+
+**理由**：hash 与该构建产物一一对应，构建期注入无需运行时网络请求、无 GitHub API
+限流；按钮语义自带键盘可访问性与焦点样式。标题保持单行省略，hash 同样为等宽 7 位，
+不会撑破品牌行。
+
+**后果**：显示的 hash 是**构建时**的 HEAD，而非远端最新提交；页面刷新/重新构建后
+才更新。若将来需要实时远端 HEAD，应另接 API 并处理限流与离线回退。
+
+**验证**：`pnpm run type-check` 通过；`pnpm run test:unit` 174 例、
+`pnpm run test:e2e` 39 例全绿（E2E 断言 `sidebar-logo` 不存在、点击标题显示
+`[0-9a-f]{7}` 或 `unknown`、再点回到 `ClawClip`）。
+
+---
+
+## ADR-036 · 更多菜单新增「格式化」：整篇 Markdown 强制校准 ✅
+
+**背景**：导入的 Markdown 常带有不统一的标题/列表标记间距、连续空行与缺失的
+文末换行；手工整理成本高，且不同来源的写法让源码看起来杂乱。需要一键校准。
+
+**决策**：
+- 顶栏「更多」菜单**第一项**加入「格式化」（`data-testid="menu-format"`），作用于整篇文档，
+  不依赖当前选区。
+- 新增纯函数 `src/utils/markdownFormat.ts::formatMarkdown()`，幂等，只做语义安全校准：
+  BOM/CRLF 归一、行尾空白（≥2 空格硬换行保留为 2）、ATX 标题间距、无序列表统一 `-`、
+  任务列表 `[X]`→`[x]`、有序列表分隔符后间距、引用 `>` 逐级补空格、连续空行压缩为 1、
+  文末恰好 1 个换行。**围栏代码块内部原样保留**，表格、强调符号、有序列表编号不重排。
+- `MarkdownEditorHandle` 新增 `replaceAll()`：整篇 dispatch 替换并保留撤销历史，
+  光标停在原偏移（截断到新文档长度）。格式化走既有自动保存链路，无需额外落库。
+- 无改动时提示「格式已符合规范」，有改动时提示「已格式化」（Snackbar）。
+
+**理由**：不引入 Prettier 等重型格式化依赖，避免其对表格/换行/强调的激进重排改变
+用户语义；手写规则可单测、可解释、可幂等。菜单第一项符合「高频编辑动作优先」的排序。
+
+**后果**：`#标题`（CommonMark 中本不是标题）会被补空格而变成标题；`1.文本` 因不是合法
+列表保持原样。格式化不会修复语法错误，只统一格式。
+
+**验证**：`src/utils/__tests__/markdownFormat.spec.ts` 13 例（各规则 + 幂等 + 代码块保护）；
+`e2e/s7-toolbar.spec.ts` 断言格式化是菜单第一项，且标题/列表/任务/引用与预览同步更新。
+
+---
+
+## ADR-037 · 删除笔记改用 M3E dialog；移动端首页复用桌面侧栏 ✅
+
+**背景**：① 删除笔记用 `window.confirm`，与文件夹删除的 M3E dialog 不一致，移动端观感也割裂；
+② 移动端首页此前只渲染 `NoteTree`，缺少桌面侧栏的品牌行、GitHub 入口、IDB 统计与明暗切换，
+两套形态的功能差距过大。
+
+**决策**：
+- 删除笔记改为 `M3eDialog`：菜单点击只打开确认框（`delete-note-dialog`），
+  取消/确认分别走 `delete-note-cancel` / `delete-note-confirm`；确认后执行 `remove(noteId)`
+  并离开已失效路由。文案明确「仅回收只被该笔记引用的附件」（共享附件按引用计数保留）。
+- 从 `Sidebar` 抽出 `SidebarBody`（品牌行 + 页签 + `NoteTree`/`OutlinePane` + 底部 bar）。
+  桌面 `Sidebar` 保留“可收起”外壳；移动端首页 `NoteListPane` 直接渲染 `SidebarBody`。
+- 移动端不展示大纲页签（`showOutline={false}`）：移动端没有常驻编辑器，返回首页时大纲
+  已卸载；共享的 `sidebarTab` 即使停在大纲，移动端也始终渲染文档树。
+- 移动端首页保留品牌行（标题/commit 切换 + GitHub）、行级「新建」、文件夹/笔记树、
+  IDB 统计与方形明暗切换。
+
+**理由**：同一份 `SidebarBody` 保证两种形态的功能与视觉一致，避免复制 UI；移动端只按
+“无编辑器”这一真实约束裁掉大纲页签。M3E dialog 与文件夹删除共用 `.confirm-dialog`
+样式和交互范式，减少浏览器原生弹窗带来的阻断感。
+
+**后果**：移动端首页高度结构变为「品牌行 + 树 + 底部 bar」，树的滚动区仍为中间 flex 区；
+桌面与移动共享 `sidebarTab` 状态，但移动端强制文档页签。删除笔记不再触发原生 `dialog`
+事件，E2E 需点击 M3E 按钮。
+
+**验证**：`pnpm run type-check` 通过；E2E `s4-attachment` 断言删除走 M3E 确认并回收附件；
+`s5-shell` 在 390×844 断言品牌行/GitHub/笔记树/统计/明暗切换可见且 `tab-outline` 不存在。

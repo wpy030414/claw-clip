@@ -11,19 +11,17 @@
  * - **title 跟随正文派生**：saveNote/saveActive 时若 patch 未显式给 title，则 deriveTitle(content) 重算
  *   （Typora/Obsidian 式「标题=首个 H1」，单一真相源）；显式给 title 则用之（支持将来重命名）。
  * - **attachmentIds 从 content 反填**：保存时正则提取所有 clawclip://blob/<id>，保证与正文一致，
- *   删除级联与导出打包才准确。
+ *   附件引用计数与导出打包才准确。
  */
 import { create } from "zustand";
 import { datasource } from "@/data/datasource";
+import { extractBlobRefIds } from "@/data/blobStore";
 import { emptyNote, toSummary } from "@/types/note";
 import type { Note, NoteSummary } from "@/types/note";
 import { emptyFolder } from "@/types/folder";
 import type { Folder } from "@/types/folder";
 import type { BackupPayload } from "@/types/backup";
 import { countWords, deriveTitle, makeExcerpt } from "@/utils/markdown";
-
-/** 与 blobStore 的 BLOB_REF_RE 同源：提取正文中所有附件引用 id。 */
-const BLOB_REF_RE = /clawclip:\/\/blob\/([\w-]+)/g;
 
 /**
  * 已打开笔记的内存缓存（id → Note）。
@@ -33,12 +31,6 @@ const BLOB_REF_RE = /clawclip:\/\/blob\/([\w-]+)/g;
  * 刷新页面后缓存为空，仍从 IndexedDB 读。
  */
 const noteCache = new Map<string, Note>();
-
-function extractAttachmentIds(content: string): string[] {
-  const ids = new Set<string>();
-  for (const m of content.matchAll(BLOB_REF_RE)) ids.add(m[1]);
-  return [...ids];
-}
 
 interface NotesState {
   activeNoteId: string | null;
@@ -62,7 +54,7 @@ interface NotesState {
   saveNote: (id: string, patch: Partial<Note>) => Promise<void>;
   /** 保存当前活动笔记（= saveNote(activeNoteId, patch)）。 */
   saveActive: (patch: Partial<Note>) => Promise<void>;
-  /** 删除笔记（乐观移除 + 级联删附件）。 */
+  /** 删除笔记（乐观移除 + 按引用计数释放附件）。 */
   remove: (id: string) => Promise<void>;
   /** 导入备份。 */
   importBackup: (payload: BackupPayload) => Promise<void>;
@@ -164,7 +156,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
       // 派生字段只在真实改动时重算
       wordCount: countWords(content),
       excerpt: makeExcerpt(content),
-      attachmentIds: extractAttachmentIds(content),
+      attachmentIds: extractBlobRefIds(content),
       updatedAt: Date.now(),
     };
 

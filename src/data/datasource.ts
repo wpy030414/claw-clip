@@ -27,7 +27,7 @@ export interface DataSource {
     pageSize?: number,
     pageOffset?: number,
   ): Promise<QueryResult>;
-  /** 删除笔记（级联删除其全部附件 blob）。 */
+  /** 删除笔记（按引用计数释放其附件；无笔记引用时自动回收 blob）。 */
   deleteNote(id: string): Promise<void>;
 
   // —— 文件夹树（v2）——
@@ -43,6 +43,11 @@ export interface DataSource {
   saveAttachment(noteId: string, file: Blob): Promise<string>;
   /** 取附件记录（含 Blob 本体）。 */
   getAttachment(id: string): Promise<BlobRecord | undefined>;
+  /**
+   * 全库校准附件引用计数：以笔记正文为准重算 refCount，
+   * 回收没有任何笔记引用的 blob（启动/导入后调用）。
+   */
+  reconcileAttachmentRefs(): Promise<{ kept: number; purged: number }>;
   /** 导出全库（notes + blobs base64 化）。 */
   exportAll(): Promise<BackupPayload>;
   /** 导入备份，返回写入计数。 */

@@ -133,3 +133,33 @@ test("导出 HTML：编辑模式下按需渲染并生成独立文档", async ({ 
   expect(html).toContain("<h1>");
   expect(html).toContain("md-preview-content");
 });
+
+test("更多菜单：格式化位于第一项并强制校准 Markdown 格式", async ({ page }) => {
+  await newNote(page);
+  await page.keyboard.insertText(
+    "#标题\n\n\n\n*   甲\n+ 乙\n- [X]   任务\n>>   引用\n\n正文   ",
+  );
+
+  await page.getByTestId("btn-menu").click();
+  const menu = page.getByTestId("editor-menu");
+  await expect(menu.getByRole("menuitem").first()).toHaveAttribute(
+    "data-testid",
+    "menu-format",
+  );
+  await page.getByTestId("menu-format").click();
+
+  const editor = page.locator(EDITOR).first();
+  await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("# 标题");
+  await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("- 甲");
+  await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("- 乙");
+  await expect
+    .poll(async () => editor.innerText(), { timeout: 5_000 })
+    .toContain("- [x] 任务");
+  await expect
+    .poll(async () => editor.innerText(), { timeout: 5_000 })
+    .toContain("> > 引用");
+
+  // 预览与编辑器同源：格式化后的标题/列表立即生效
+  await expect(page.getByTestId("md-preview").locator("h1").first()).toHaveText("标题");
+  await expect(page.getByTestId("md-preview").locator("li").first()).toContainText("甲");
+});

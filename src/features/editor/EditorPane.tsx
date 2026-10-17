@@ -14,6 +14,7 @@ import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 import type { MarkdownCommand } from "@/components/editor/markdownCommands";
 import { MarkdownPreview } from "@/components/preview/MarkdownPreview";
 import { toastError, toastSuccess } from "@/components/common/Snackbar";
+import { M3eDialog } from "@/components/m3e";
 import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
@@ -31,6 +32,7 @@ import {
   safeFilename,
 } from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
+import { formatMarkdown } from "@/utils/markdownFormat";
 import { setActiveEditor } from "./activeEditor";
 import "@/features/editor/editor.css";
 
@@ -57,6 +59,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   // 移动端没有横向空间：split 退化为纯编辑，仍可手动切到预览
@@ -111,9 +114,29 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     return undefined;
   }, [effectiveView]);
 
-  const handleDelete = async () => {
+  /** 强制校准整篇 Markdown 格式（不依赖选区）。 */
+  const handleFormat = () => {
     setMenuOpen(false);
-    if (!window.confirm("删除这条笔记？附件也会一并删除。")) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    const before = editor.getValue();
+    const after = formatMarkdown(before);
+    if (after === before) {
+      toastSuccess("格式已符合规范");
+      return;
+    }
+    editor.replaceAll(after);
+    toastSuccess("已格式化");
+  };
+
+  /** 打开删除确认（M3E dialog，与文件夹删除一致）。 */
+  const handleDelete = () => {
+    setMenuOpen(false);
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleteOpen(false);
     await remove(noteId);
     onBack?.();
     onDeleted?.();
@@ -276,6 +299,15 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
                 onClick={() => setMenuOpen(false)}
               />
               <div className="editor-menu" role="menu" data-testid="editor-menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-format"
+                  onClick={handleFormat}
+                >
+                  <span className="material-symbols-outlined">auto_fix_high</span> 格式化
+                </button>
+                <div className="editor-menu-sep" />
                 <div className="editor-menu-label">导出</div>
                 <button type="button" role="menuitem" data-testid="menu-export-md" onClick={() => void handleExport("md")}>
                   <span className="material-symbols-outlined">description</span> Markdown (.md)
@@ -295,7 +327,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
                   role="menuitem"
                   className="editor-menu-danger"
                   data-testid="menu-delete"
-                  onClick={() => void handleDelete()}
+                  onClick={handleDelete}
                 >
                   <span className="material-symbols-outlined">delete</span> 删除笔记
                 </button>
@@ -339,6 +371,37 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
           </section>
         )}
       </div>
+
+      <M3eDialog
+        open={deleteOpen}
+        data-testid="delete-note-dialog"
+        onClosed={() => setDeleteOpen(false)}
+      >
+        <span slot="header">删除笔记</span>
+        <div className="confirm-dialog" data-testid="delete-note-content">
+          <p className="confirm-dialog-text">
+            删除「{title}」？笔记将被移除，仅被它引用的附件会一并回收，且无法恢复。
+          </p>
+          <div className="confirm-dialog-actions">
+            <button
+              type="button"
+              className="confirm-dialog-btn"
+              data-testid="delete-note-cancel"
+              onClick={() => setDeleteOpen(false)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="confirm-dialog-btn confirm-dialog-btn--danger"
+              data-testid="delete-note-confirm"
+              onClick={() => void confirmDelete()}
+            >
+              删除
+            </button>
+          </div>
+        </div>
+      </M3eDialog>
 
     </div>
   );

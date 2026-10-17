@@ -4,14 +4,42 @@
 import { describe, expect, it } from "vitest";
 import {
   BLOB_URL_SCHEME,
-  deleteBlobsOfNote,
+  extractBlobRefIds,
   getBlob,
   hydrateMarkdown,
+  reconcileBlobRefs,
   releaseBlobUrls,
   resolveBlobUrl,
   saveBlob,
 } from "@/data/blobStore";
-import { makeBlob } from "@/test/factories";
+import { globalConfig } from "@/config";
+import { withTx } from "@/data/db";
+import { idbReq } from "@/utils/idb";
+import type { BlobRecord } from "@/types/blob";
+import type { Note } from "@/types/note";
+import { makeBlob, makeNote } from "@/test/factories";
+
+const notesStore = globalConfig.storeNames.notes;
+const blobsStore = globalConfig.storeNames.blobs;
+
+/** 直接写原始记录，模拟历史版本/异常残留数据。 */
+async function putRawNote(note: Note): Promise<void> {
+  await withTx(notesStore, "readwrite", (tx) => {
+    tx.objectStore(notesStore).put(note);
+  });
+}
+
+async function readRawNote(id: string): Promise<Note | undefined> {
+  return withTx<Note | undefined>(notesStore, "readonly", (tx) =>
+    idbReq<Note | undefined>(tx.objectStore(notesStore).get(id)),
+  );
+}
+
+async function putRawBlob(record: BlobRecord): Promise<void> {
+  await withTx(blobsStore, "readwrite", (tx) => {
+    tx.objectStore(blobsStore).put(record);
+  });
+}
 
 describe("blobStore.saveBlob / getBlob", () => {
   it("saveBlob 返回 id，getBlob 取回记录", async () => {
@@ -98,16 +126,66 @@ describe("blobStore.releaseBlobUrls（防泄漏）", () => {
   });
 });
 
-describe("blobStore.deleteBlobsOfNote（级联）", () => {
-  it("删除某笔记全部附件，不影响其它笔记", async () => {
-    const b1 = await saveBlob("note-a", makeBlob("a", "image/png"));
-    const b2 = await saveBlob("note-a", makeBlob("b", "image/png"));
-    const b3 = await saveBlob("note-b", makeBlob("c", "image/png"));
+describe("blobStore.extractBlobRefIds（正文引用提取）", () => {
+  it("提取全部 clawclip://blob/<id> 并按 id 去重", () => {
+    const md = `![](${BLOB_URL_SCHEME}a-1) ![](${BLOB_URL_SCHEME}b_2) ![](${BLOB_URL_SCHEME}a-1)`;
+    expect(extractBlobRefIds(md).sort()).toEqual(["a-1", "b_2"]);
+  });
 
-    await deleteBlobsOfNote("note-a");
+  it("无引用正文返回空数组", () => {
+    expect(extractBlobRefIds("# 纯文本\n\n没有附件")).toEqual([]);
+  });
+});
 
-    expect(await getBlob(b1)).toBeUndefined();
-    expect(await getBlob(b2)).toBeUndefined();
-    expect(await getBlob(b3)).toBeDefined(); // note-b 的不受影响
+describe("blobStore.reconcileBlobRefs（引用计数校准 + 孤儿回收）", () => {
+  it("按笔记正文回填 refCount，并删除没有任何笔记引用的 blob", async () => {
+    const b1 = await saveBlob("n1", makeBlob("a", "image/png"));
+    const b2 = await saveBlob("n1", makeBlob("b", "image/png")); // 孤儿
+    const b3 = await saveBlob("n1", makeBlob("c", "image/png"));
+
+    // note-a 两次引用 b1（只算 1），再引用 b3；attachmentIds 故意留空模拟陈旧索引
+    await putRawNote(
+      makeNote({
+        id: "note-a",
+        content: `![](${BLOB_URL_SCHEME}${b1}) 和 ![](${BLOB_URL_SCHEME}${b1}) ![](${BLOB_URL_SCHEME}${b3})`,
+        attachmentIds: [],
+      }),
+    );
+    // note-b 也引用 b3 → 共享附件计数 2
+    await putRawNote(
+      makeNote({ id: "note-b", content: `![](${BLOB_URL_SCHEME}${b3})`, attachmentIds: [] }),
+    );
+
+    const result = await reconcileBlobRefs();
+
+    expect((await getBlob(b1))!.refCount).toBe(1);
+    expect((await getBlob(b3))!.refCount).toBe(2);
+    expect(await getBlob(b2)).toBeUndefined(); // ★ 无引用 → 自动回收
+    expect(result).toEqual({ kept: 2, purged: 1 });
+
+    // 陈旧的 attachmentIds 也被修复
+    expect((await readRawNote("note-a"))!.attachmentIds.sort()).toEqual([b1, b3].sort());
+  });
+
+  it("旧版本记录缺失 refCount 时按正文补回（不做数据迁移也能自愈）", async () => {
+    const id = await saveBlob("n", makeBlob("legacy", "image/png"));
+    const rec = (await getBlob(id))!;
+    // 模拟旧版本记录：没有 refCount 字段
+    const { refCount: _omit, ...legacy } = rec;
+    await putRawBlob(legacy as BlobRecord);
+    await putRawNote(
+      makeNote({ id: "legacy-note", content: `![](${BLOB_URL_SCHEME}${id})` }),
+    );
+
+    await reconcileBlobRefs();
+
+    expect((await getBlob(id))!.refCount).toBe(1);
+  });
+
+  it("没有任何引用时全部回收（清空笔记后的残留）", async () => {
+    const id = await saveBlob("n", makeBlob("orphan"));
+    const res = await reconcileBlobRefs();
+    expect(res.purged).toBe(1);
+    expect(await getBlob(id)).toBeUndefined();
   });
 });

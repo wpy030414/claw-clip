@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { LocalDataSource } from "@/data/local";
+import { BLOB_URL_SCHEME } from "@/data/blobStore";
 import { makeNote, makeBlob } from "@/test/factories";
 
 const ds = new LocalDataSource();
@@ -43,39 +44,100 @@ describe("LocalDataSource.upsertNote / getNote", () => {
   });
 });
 
-describe("LocalDataSource.deleteNote（级联删附件）", () => {
-  it("删除笔记时级联删除其全部附件 blob", async () => {
-    const note = makeNote({ id: "note-with-blobs" });
-    await ds.upsertNote(note);
+describe("LocalDataSource.deleteNote（引用计数级联）", () => {
+  /** 把附件挂进正文（attachmentIds 故意留空，验证 upsert 以正文为准反填）。 */
+  const withRefs = (id: string, blobIds: string[]) =>
+    makeNote({
+      id,
+      content: blobIds.map((b) => `![](${BLOB_URL_SCHEME}${b})`).join("\n"),
+      attachmentIds: [],
+    });
 
-    // 存两个附件
+  it("删除笔记时引用计数归零，其全部附件自动删除", async () => {
     const b1 = await ds.saveAttachment("note-with-blobs", makeBlob("img1", "image/png"));
     const b2 = await ds.saveAttachment("note-with-blobs", makeBlob("img2", "image/png"));
-    expect(await ds.getAttachment(b1)).toBeDefined();
-    expect(await ds.getAttachment(b2)).toBeDefined();
+    await ds.upsertNote(withRefs("note-with-blobs", [b1, b2]));
+
+    expect((await ds.getAttachment(b1))!.refCount).toBe(1);
+    expect((await ds.getAttachment(b2))!.refCount).toBe(1);
 
     await ds.deleteNote("note-with-blobs");
 
-    // 笔记没了
     expect(await ds.getNote("note-with-blobs")).toBeUndefined();
-    // ★ 附件也级联删了
+    // ★ 引用归零 → 附件自动回收
     expect(await ds.getAttachment(b1)).toBeUndefined();
     expect(await ds.getAttachment(b2)).toBeUndefined();
   });
 
-  it("删一条笔记不影响其它笔记的附件", async () => {
-    const n1 = makeNote({ id: "n1" });
-    const n2 = makeNote({ id: "n2" });
-    await ds.upsertNote(n1);
-    await ds.upsertNote(n2);
+  it("删一条笔记不影响其它笔记独立引用的附件", async () => {
     const b1 = await ds.saveAttachment("n1", makeBlob("a"));
     const b2 = await ds.saveAttachment("n2", makeBlob("b"));
+    await ds.upsertNote(withRefs("n1", [b1]));
+    await ds.upsertNote(withRefs("n2", [b2]));
 
     await ds.deleteNote("n1");
 
-    expect(await ds.getAttachment(b1)).toBeUndefined(); // n1 的附件删了
+    expect(await ds.getAttachment(b1)).toBeUndefined(); // n1 的附件回收
     expect(await ds.getAttachment(b2)).toBeDefined(); // n2 的附件还在
+    expect((await ds.getAttachment(b2))!.refCount).toBe(1);
     expect(await ds.getNote("n2")).toBeDefined();
+  });
+});
+
+describe("LocalDataSource 附件引用计数", () => {
+  it("从正文移除引用并保存后，附件立即自动回收", async () => {
+    const b = await ds.saveAttachment("n", makeBlob("img", "image/png"));
+    const note = makeNote({
+      id: "n",
+      content: `![](${BLOB_URL_SCHEME}${b})`,
+    });
+    await ds.upsertNote(note);
+    expect((await ds.getAttachment(b))!.refCount).toBe(1);
+
+    await ds.upsertNote({ ...note, content: "附件删掉了" });
+
+    expect(await ds.getAttachment(b)).toBeUndefined(); // ★ 无笔记使用 → 清掉
+  });
+
+  it("同一附件被多条笔记引用：删一条不误删，全部删完才回收", async () => {
+    const b = await ds.saveAttachment("n1", makeBlob("shared", "image/png"));
+    const content = `![](${BLOB_URL_SCHEME}${b})`;
+    await ds.upsertNote(makeNote({ id: "n1", content }));
+    await ds.upsertNote(makeNote({ id: "n2", content }));
+
+    expect((await ds.getAttachment(b))!.refCount).toBe(2);
+
+    await ds.deleteNote("n1");
+    expect((await ds.getAttachment(b))!.refCount).toBe(1); // ★ 仍被 n2 引用
+
+    await ds.deleteNote("n2");
+    expect(await ds.getAttachment(b)).toBeUndefined(); // 最后一条引用消失才删
+  });
+
+  it("同一笔记内重复引用同一附件只计一次", async () => {
+    const b = await ds.saveAttachment("n", makeBlob("dup", "image/png"));
+    await ds.upsertNote(
+      makeNote({
+        id: "n",
+        content: `![](${BLOB_URL_SCHEME}${b}) 再次 ![](${BLOB_URL_SCHEME}${b})`,
+      }),
+    );
+
+    expect((await ds.getAttachment(b))!.refCount).toBe(1);
+  });
+
+  it("upsert 以正文为准重填 attachmentIds（陈旧索引不会污染计数）", async () => {
+    const b = await ds.saveAttachment("n", makeBlob("real", "image/png"));
+    await ds.upsertNote(
+      makeNote({
+        id: "n",
+        content: `![](${BLOB_URL_SCHEME}${b})`,
+        attachmentIds: ["ghost-blob"],
+      }),
+    );
+
+    const got = await ds.getNote("n");
+    expect(got!.attachmentIds).toEqual([b]);
   });
 });
 
@@ -97,10 +159,14 @@ describe("LocalDataSource.countAll / clear", () => {
 
 describe("LocalDataSource.exportAll / importAll（备份往返）", () => {
   it("导出→导入往返一致（notes 字段 + blob 二进制还原）", async () => {
-    const note = makeNote({ id: "exp1", content: "导出测试", tags: ["tag1"] });
-    await ds.upsertNote(note);
     const blobContent = "图片二进制内容";
     const blobId = await ds.saveAttachment("exp1", makeBlob(blobContent, "image/png"));
+    const note = makeNote({
+      id: "exp1",
+      content: `导出测试 ![](${BLOB_URL_SCHEME}${blobId})`,
+      tags: ["tag1"],
+    });
+    await ds.upsertNote(note);
 
     // 导出
     const payload = await ds.exportAll();
@@ -119,10 +185,12 @@ describe("LocalDataSource.exportAll / importAll（备份往返）", () => {
 
     // 验证还原
     const gotNote = await ds.getNote("exp1");
-    expect(gotNote!.content).toBe("导出测试");
+    expect(gotNote!.content).toContain("导出测试");
+    expect(gotNote!.content).toContain(`${BLOB_URL_SCHEME}${blobId}`);
     expect(gotNote!.tags).toEqual(["tag1"]);
 
     const gotBlob = await ds.getAttachment(blobId);
+    expect(gotBlob!.refCount).toBe(1); // ★ 导入后按正文重算
     expect(gotBlob).toBeDefined();
     expect(await gotBlob!.data.text()).toBe(blobContent); // ★ 二进制无损还原
     expect(gotBlob!.mime).toBe("image/png");
@@ -135,6 +203,10 @@ describe("LocalDataSource.exportAll / importAll（备份往返）", () => {
     // 构造含非 ASCII 字节的二进制
     const bytes = new Uint8Array([0x00, 0xff, 0x80, 0x7f, 0xc3, 0xa9, 0x01, 0xfe]);
     const blobId = await ds.saveAttachment("bin1", new Blob([bytes], { type: "application/octet-stream" }));
+    // 附件必须被正文引用，否则导入后的 reconcile 会把它当孤儿回收
+    await ds.upsertNote(
+      makeNote({ id: "bin1", content: `![](${BLOB_URL_SCHEME}${blobId})` }),
+    );
 
     const payload = await ds.exportAll();
     await ds.clear();

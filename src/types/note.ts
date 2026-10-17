@@ -4,7 +4,7 @@
  * 对旧 Blog 模型的关键修正：
  * - id 用 UUID（非时间戳），编辑原地更新永不改 id（修正旧「编辑=删旧建新」bug）
  * - wordCount/excerpt 冗余存储，列表页只读轻量投影 NoteSummary，content 不进内存
- * - attachmentIds 反向索引，供删除级联 & 导出打包
+ * - attachmentIds 反向索引，供附件引用计数 & 导出打包
  */
 export interface Note {
   id: string;
@@ -19,7 +19,7 @@ export interface Note {
   wordCount: number;
   /** 冗余：前 N 字纯文本摘要（列表卡片用） */
   excerpt: string;
-  /** 该笔记引用的 blob id 列表（删除级联 & 导出用） */
+  /** 该笔记引用的 blob id 列表（附件引用计数 & 导出用；保存时由正文反填） */
   attachmentIds: string[];
   /** 所属文件夹 id；null/undefined = 根目录（v2 起） */
   folderId?: string | null;

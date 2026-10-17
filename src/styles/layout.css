@@ -543,23 +543,18 @@ m3e-theme {
 .sidebar-brand-main {
   display: flex;
   align-items: center;
-  gap: 9px;
   min-width: 0;
 }
 
-.sidebar-logo {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-
-/* favicon 是单色黑标：暗色主题反相成白色 */
-.sidebar-logo[data-dark="true"] {
-  filter: invert(1);
-}
-
+/* 标题即按钮：点击切换显示当前 commit hash（7 位），再点回到标题 */
 .sidebar-brand-name {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 1.2rem;
   font-weight: 700;
@@ -568,6 +563,20 @@ m3e-theme {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sidebar-brand-name:hover {
+  color: var(--md-sys-color-primary, #6750a4);
+}
+
+.sidebar-brand-name:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary, #6750a4);
+  outline-offset: 3px;
+}
+
+.sidebar-brand-name[data-mode="commit"] {
+  color: var(--md-sys-color-on-surface-variant, #49454f);
+  letter-spacing: 0;
 }
 
 .sidebar-github {

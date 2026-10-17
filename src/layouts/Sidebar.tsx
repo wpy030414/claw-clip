@@ -3,7 +3,11 @@
  *
  * 收起/展开按钮由 DesktopLayout 放在主内容顶栏左侧；侧栏自身只在打开时渲染。
  * 文档页签的内容由 NoteTree 负责（行级新建按钮 + 文件夹/笔记树）。
+ *
+ * `SidebarBody` 同时被桌面侧栏与移动端首页复用：移动端隐藏大纲页签，
+ * 其余品牌行、笔记树、底部统计与明暗切换与桌面保持一致。
  */
+import { useState } from "react";
 import { globalConfig } from "@/config";
 import { NoteTree } from "@/features/notes/NoteTree";
 import { SidebarStats } from "@/features/notes/SidebarStats";
@@ -11,28 +15,40 @@ import { OutlinePane } from "@/features/outline/OutlinePane";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 
-export function Sidebar() {
-  const open = useUiStore((s) => s.sidebarOpen);
+/** 构建期注入的 commit hash（7 位）；非 Vite 环境下兜底。 */
+const commitHash = typeof __APP_COMMIT__ === "string" ? __APP_COMMIT__ : "unknown";
+
+interface SidebarBodyProps {
+  /** 移动端首页没有编辑器常驻，不提供大纲页签。 */
+  showOutline?: boolean;
+}
+
+/** 侧栏内容（不含外层 aside），桌面/移动共用。 */
+export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
+  const [showCommit, setShowCommit] = useState(false);
   const tab = useUiStore((s) => s.sidebarTab);
   const setTab = useUiStore((s) => s.setSidebarTab);
   const resolvedScheme = useSettingsStore((s) => s.resolvedScheme);
   const toggleScheme = useSettingsStore((s) => s.toggleScheme);
 
-  if (!open) return null;
+  // 移动端不展示大纲：即使共享状态停在大纲页签，也始终渲染文档树
+  const activeTab = showOutline ? tab : "docs";
 
   return (
-    <aside className="app-sidebar" data-testid="app-sidebar">
+    <>
       <div className="sidebar-brand" data-testid="sidebar-brand">
         <span className="sidebar-brand-main">
-          <img
-            className="sidebar-logo"
-            data-testid="sidebar-logo"
-            src={`${import.meta.env.BASE_URL}favicon.ico`}
-            alt=""
-            aria-hidden="true"
-            data-dark={resolvedScheme === "dark" ? "true" : "false"}
-          />
-          <span className="sidebar-brand-name">{globalConfig.appName.en}</span>
+          <button
+            type="button"
+            className="sidebar-brand-name"
+            data-testid="sidebar-title"
+            data-mode={showCommit ? "commit" : "title"}
+            title={showCommit ? "返回标题" : `提交 ${commitHash}`}
+            aria-label={showCommit ? "返回标题" : `显示当前提交 ${commitHash}`}
+            onClick={() => setShowCommit((v) => !v)}
+          >
+            {showCommit ? commitHash : globalConfig.appName.en}
+          </button>
         </span>
         <a
           className="sidebar-github"
@@ -49,32 +65,34 @@ export function Sidebar() {
         </a>
       </div>
 
-      <div className="sidebar-top">
-        <div className="sidebar-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            data-testid="tab-docs"
-            data-active={tab === "docs" ? "true" : "false"}
-            aria-selected={tab === "docs"}
-            onClick={() => setTab("docs")}
-          >
-            文档
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-testid="tab-outline"
-            data-active={tab === "outline" ? "true" : "false"}
-            aria-selected={tab === "outline"}
-            onClick={() => setTab("outline")}
-          >
-            大纲
-          </button>
+      {showOutline && (
+        <div className="sidebar-top">
+          <div className="sidebar-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-docs"
+              data-active={tab === "docs" ? "true" : "false"}
+              aria-selected={tab === "docs"}
+              onClick={() => setTab("docs")}
+            >
+              文档
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-outline"
+              data-active={tab === "outline" ? "true" : "false"}
+              aria-selected={tab === "outline"}
+              onClick={() => setTab("outline")}
+            >
+              大纲
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {tab === "outline" ? <OutlinePane /> : <NoteTree />}
+      {activeTab === "outline" ? <OutlinePane /> : <NoteTree />}
 
       <footer className="sidebar-footer" data-testid="sidebar-footer">
         <SidebarStats />
@@ -92,6 +110,19 @@ export function Sidebar() {
           </span>
         </button>
       </footer>
+    </>
+  );
+}
+
+/** 桌面侧栏外壳：只在展开时渲染内容。 */
+export function Sidebar() {
+  const open = useUiStore((s) => s.sidebarOpen);
+
+  if (!open) return null;
+
+  return (
+    <aside className="app-sidebar" data-testid="app-sidebar">
+      <SidebarBody />
     </aside>
   );
 }

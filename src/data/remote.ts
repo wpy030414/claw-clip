@@ -59,6 +59,9 @@ export class RemoteDataSource implements DataSource {
   async getAttachment(_id: string): Promise<BlobRecord | undefined> {
     return notImplemented("getAttachment");
   }
+  async reconcileAttachmentRefs(): Promise<{ kept: number; purged: number }> {
+    return notImplemented("reconcileAttachmentRefs");
+  }
   async exportAll(): Promise<BackupPayload> {
     return notImplemented("exportAll");
   }

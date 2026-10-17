@@ -35,3 +35,19 @@ coverage
 
 # 测试产物
 test-results
+
+# 截图等位图产物：仓库瘦身，永久禁止进入版本库
+# 任何层级的截图目录与常见位图格式一律忽略；确需入库的图片请在下方用 !路径 显式放行。
+**/screenshots/
+**/playwright-report/
+**/blob-report/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.avif
+*.heic

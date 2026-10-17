@@ -45,8 +45,6 @@ test("S1: M3E 主题挂载 + 按钮渲染 shadow DOM", async ({ page }) => {
   });
   expect(appDivBg).toMatch(/^rgb\(/);
   expect(appDivBg).not.toBe("rgba(0, 0, 0, 0)"); // 非透明 = token 继承成功
-
-  await page.screenshot({ path: "e2e/screenshots/s1-hello-world.png", fullPage: true });
 });
 
 test("S1: Snackbar 命令式 API 可用（Cmd+S 保存触发）", async ({ page }) => {

@@ -57,10 +57,17 @@ notesStore.openNote(id)
 ### 附件
 ```
 选择文件 / 粘贴 / 拖入
-  → saveBlob(noteId, file) → IndexedDB blobs 表 → blobId
+  → saveBlob(noteId, file) → IndexedDB blobs 表 → blobId（refCount=0）
   → 在光标处插入 ![name](clawclip://blob/<id>)
   → 正文（存储态）始终保存 clawclip:// 引用，永不落 blob: URL
+  → 保存笔记：upsertNote 在同一事务内 diff 新旧正文引用
+     新增引用 +1 / 移除引用 -1，refCount 归零立即删除 blob
 ```
+
+**引用计数生命周期**：`blobs.refCount` = 引用该附件的**笔记数**（同一笔记内多次引用只算 1）。
+附件可被复制粘贴到其它笔记，删除笔记只递减计数、不按 `noteId` 盲删；计数归零才真正回收。
+启动与导入备份后执行 `reconcileBlobRefs()`：以笔记正文为唯一真相源重算计数、修复陈旧
+`attachmentIds`、清理历史孤儿与旧版本无 `refCount` 的记录（失败不阻塞启动）。
 
 ### 实时预览 / 导出
 ```
@@ -89,17 +96,19 @@ PDF 用 html2canvas-pro 离屏按预览排版渲染，再由 jsPDF 切片成 A4 
 
 | | 桌面工作台（≥900px） | 移动端（<900px） |
 |---|---|---|
-| 导航 | **可收侧栏**：品牌行 → 等宽页签 → 行级「新建」→ 文件夹/笔记树 | 无导航栏（仅笔记一个目的地） |
+| 导航 | **可收侧栏**：品牌行 → 等宽页签 → 行级「新建」→ 文件夹/笔记树 → 底部统计/明暗切换 | 首页复用侧栏内容：品牌行 → 行级「新建」→ 文件夹/笔记树 → 底部统计/明暗切换（无大纲页签） |
 | 主区 | **编辑工作区**：编辑 / 分屏 / 预览三态；默认分屏 | 笔记树 or 全屏编辑器（有 noteId 则全屏）；split 退化为编辑 |
 | 列表 | 侧栏内**文件夹 + 笔记统一树**（`NoteTree`） | 同一棵 `NoteTree` |
-| 大纲 | 侧栏「大纲」页签 | 编辑器内（暂不提供） |
+| 大纲 | 侧栏「大纲」页签 | 不提供（移动端无常驻编辑器） |
 | 返回 | 无需（侧栏常驻） | `EditorPane onBack` 回列表 |
 
 **侧栏开关**：`DesktopLayout` 在主内容左上角渲染一个 `main-sidebar-toggle`
 （`data-testid` 随状态切换 `btn-sidebar-close` / `btn-sidebar-open`）；
-`Sidebar` 自身只在打开时渲染，不再内置收起按钮。顶部品牌行由三部分组成：左侧网站
-logo（`public/favicon.ico`，24px；暗色主题用 `filter: invert(1)` 反相）、等宽字体的
-`ClawClip` 标题、右侧 GitHub 图标（外链 `globalConfig.projectUrl`）。
+`Sidebar` 自身只在打开时渲染，不再内置收起按钮。顶部品牌行由两部分组成：左侧等宽字体的
+`ClawClip` 标题（无图标；按钮形式，点击切换显示构建期注入的 7 位 commit hash，再点回到
+标题文字）、右侧 GitHub 图标（外链 `globalConfig.projectUrl`）。commit hash 由
+`vite.config.ts` 在 dev/build 启动时执行 `git rev-parse --short=7 HEAD` 注入
+`__APP_COMMIT__`，无 git 环境降级为 `unknown`。
 
 **侧栏底部 bar**：`Sidebar` 在内容下方渲染 `.sidebar-footer`：左侧 `SidebarStats` 统计胶囊
 （数据库图标 + 「共 x 个笔记 · xxx KB/MB/GB」），右侧 34px 方形明暗切换按钮。
@@ -155,6 +164,9 @@ CodeMirror 6 是命令式 API，React 封装遵循：
   连续输入不重复渲染。视图三态（编辑 / 分屏 / 预览）持久化在 `settings.viewMode`，桌面默认 `split`。
 - **格式工具栏**（`MarkdownToolbar` + `markdownCommands.ts`）：工具栏只发出纯命令，纯函数把
   「文档 + 选区」映射为 CodeMirror 的 `changes`/`selection`，可脱离 DOM 单测；编辑器只负责 dispatch。
+- **格式化**（更多菜单第一项，`utils/markdownFormat.ts`）：`formatMarkdown()` 是幂等纯函数，
+  整篇强制校准标题/列表/任务/引用/有序列表的标记间距、行尾硬换行、连续空行与文末换行；
+  围栏代码块内部原样保留。结果经 `MarkdownEditorHandle.replaceAll()` 整篇替换（保留撤销历史）。
 - **★ CodeMirror 必须 `root: document`**：`EditorView` 默认用 `getRoot(parent)` 定位样式根，
   而该函数会沿 `assignedSlot` 走进 `<m3e-theme>` 的 ShadowRoot。编辑器是 light-DOM 插槽内容，
   Shadow DOM 内的样式规则匹配不到它，会导致 CodeMirror 全部基础样式失效（等宽字体/行高/内边距/焦点描边）。
@@ -175,7 +187,7 @@ IndexedDB `claw-clip-v2`（v3，与旧库物理隔离）：
 |---|---|---|---|
 | `notes` | id | updatedAt/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId） |
 | `folders` | id | parentId/updatedAt | 文件夹（扁平存储 + `order` 手动排序） |
-| `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer） |
+| `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer）+ `refCount` 引用计数 |
 | `meta` | key | — | schemaVersion 等 |
 
 `datasource.ts` 门面按 `enableStoringLocally` 切 Local/Remote（占位）。`db.ts` 提供
@@ -209,7 +221,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 |---|---|
 | `src/data/db.ts` / `local.ts` / `query.ts` | IndexedDB 连接、CRUD、过滤排序分页 |
 | `src/data/exchange.ts` | MD/DOCX/PDF 导入导出（重型依赖动态加载） |
-| `src/data/blobStore.ts` | 附件 blob + `clawclip://` ⇄ object URL |
+| `src/data/blobStore.ts` | 附件引用计数/回收 + `clawclip://` ⇄ object URL |
 | `src/stores/notesStore.ts` | 笔记/文件夹真相源 + noteCache + 列表请求序号 |
 | `src/hooks/useMarkdownSession.ts` | 编辑会话：加载、节流自动保存、卸载落库 |
 | `src/hooks/useRenderedMarkdown.ts` | 按需渲染 + 附件水合 |
@@ -217,6 +229,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | `src/features/editor/EditorPane.tsx` | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出 |
 | `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令） |
 | `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数 |
+| `src/utils/markdownFormat.ts` | 整篇 Markdown 格式化（幂等、代码块保护） |
 | `src/features/preview/themes.ts` | 内置预览/导出排版 CSS |
 
 ## 10. 已知限制
