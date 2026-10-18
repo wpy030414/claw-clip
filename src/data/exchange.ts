@@ -373,13 +373,25 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
   return text ? [new Paragraph({ children: inlineRuns(el) as never })] : [];
 }
 
+export interface HtmlToDocxOptions {
+  /** 外链图片下载失败（CORS/网络）时的回调，UI 可提示「已跳过」。 */
+  onUnresolved?: (urls: string[]) => void;
+}
+
 /** HTML → DOCX Blob。 */
-export async function htmlToDocx(html: string, title: string): Promise<Blob> {
+export async function htmlToDocx(
+  html: string,
+  title: string,
+  options: HtmlToDocxOptions = {},
+): Promise<Blob> {
   docxApi = await import("docx");
   await loadMathApi();
   const { Document, Packer, Paragraph, TextRun } = docxApi;
   // 自包含处理（幂等）：附件 blob:/http → data URL；Mermaid 代码块 → 高清 PNG
-  const prepared = await prepareExportHtml(html, { mermaid: "png" });
+  const prepared = await prepareExportHtml(html, {
+    mermaid: "png",
+    onUnresolved: options.onUnresolved,
+  });
   const dom = new DOMParser().parseFromString(prepared, "text/html");
 
   const children: DocxChild[] = [];

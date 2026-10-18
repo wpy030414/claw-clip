@@ -9,6 +9,7 @@ import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
+import { StorageDialog } from "@/features/storage/StorageDialog";
 import { DesktopLayout } from "./DesktopLayout";
 import { MobileLayout } from "./MobileLayout";
 
@@ -54,5 +55,10 @@ export function AppShell() {
     "mod+shift+d": () => toggleScheme(),
   });
 
-  return isDesktop ? <DesktopLayout /> : <MobileLayout />;
+  return (
+    <>
+      {isDesktop ? <DesktopLayout /> : <MobileLayout />}
+      <StorageDialog />
+    </>
+  );
 }

@@ -22,4 +22,11 @@ export interface BlobRecord {
   createdAt: number;
   /** 引用该附件的笔记数（0=无引用，等待回收）；旧记录缺失时按 0 处理 */
   refCount: number;
+  /**
+   * 已上传到图床后的外链（仅作为云快照组装的缓存，避免重复上传）。
+   * 本地正文仍引用 `clawclip://blob/<id>`，本字段不参与渲染与引用计数。
+   */
+  remoteUrl?: string;
+  /** 图床上传时间（epoch ms） */
+  remoteUploadedAt?: number;
 }

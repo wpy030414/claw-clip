@@ -13,12 +13,14 @@ import { renderMermaidBlocks } from "@/utils/mermaid";
 export interface PrepareExportOptions {
   /** mermaid=svg 用于 HTML/PDF；png 用于 DOCX；none 跳过渲染。默认 svg。 */
   mermaid?: "svg" | "png" | "none";
+  /** 内联失败（CORS/网络）的外链资源 URL，供 UI 提示「导出文件需联网查看」。 */
+  onUnresolved?: (urls: string[]) => void;
 }
 
 /** 解析 HTML → 内联图片/附件 → 渲染 Mermaid → 返回新的 HTML 字符串。 */
 export async function prepareExportHtml(
   bodyHtml: string,
-  { mermaid = "svg" }: PrepareExportOptions = {},
+  { mermaid = "svg", onUnresolved }: PrepareExportOptions = {},
 ): Promise<string> {
   const doc = new DOMParser().parseFromString(
     "<!doctype html><html><body></body></html>",
@@ -26,7 +28,8 @@ export async function prepareExportHtml(
   );
   doc.body.innerHTML = bodyHtml;
 
-  await inlineResources(doc.body);
+  const unresolved = new Set<string>();
+  await inlineResources(doc.body, unresolved);
 
   if (mermaid !== "none") {
     await renderMermaidBlocks(doc.body, {
@@ -36,16 +39,18 @@ export async function prepareExportHtml(
     });
   }
 
+  onUnresolved?.([...unresolved]);
   return doc.body.innerHTML;
 }
 
 /** 把 img[src] / a[href] 的 blob:/http(s): 资源内联为 data URL。 */
-async function inlineResources(root: HTMLElement): Promise<void> {
+async function inlineResources(root: HTMLElement, unresolved?: Set<string>): Promise<void> {
   const cache = new Map<string, string | null>();
 
   const toDataUrl = async (url: string): Promise<string | null> => {
     if (cache.has(url)) return cache.get(url) ?? null;
     const data = await fetchAsDataUrl(url);
+    if (!data) unresolved?.add(url);
     cache.set(url, data);
     return data;
   };

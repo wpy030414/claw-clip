@@ -13,17 +13,19 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "@/components/editor/M
 import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 import type { MarkdownCommand } from "@/components/editor/markdownCommands";
 import { MarkdownPreview } from "@/components/preview/MarkdownPreview";
-import { toastError, toastSuccess } from "@/components/common/Snackbar";
+import { toastError, toastSuccess, toastWarning } from "@/components/common/Snackbar";
 import { M3eDialog } from "@/components/m3e";
 import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { usePresence } from "@/hooks/usePresence";
 import { useNotesStore } from "@/stores/notesStore";
+import { useIntegrationStore } from "@/stores/integrationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { defaultViewMode, useUiStore, type ViewMode } from "@/stores/uiStore";
 import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
-import { hydrateMarkdown, releaseBlobUrls, saveBlob } from "@/data/blobStore";
+import { hydrateMarkdown, releaseBlobUrls } from "@/data/blobStore";
+import { isImageFile, resolveUploadTarget } from "@/data/imageHost";
 import {
   buildHtmlDocument,
   buildPrintDocument,
@@ -251,18 +253,31 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     onDeleted?.();
   };
 
+  const imageHost = useIntegrationStore((s) => s.imageHost);
+  const recordImageUpload = useIntegrationStore((s) => s.recordImageUpload);
+
+  /**
+   * 粘贴/拖入文件：按当前上传目标处理。
+   *
+   * - 图片 + 图床目标：上传成功后正文写外链；失败回退本地并提示；
+   * - 其它情况（含所有非图片）：存 IndexedDB，正文写 `clawclip://blob/<id>`。
+   */
   const insertFiles = useCallback(
     async (files: File[]) => {
       for (const file of files) {
-        const blobId = await saveBlob(noteId, file);
-        const ref = `clawclip://blob/${blobId}`;
-        const md = file.type.startsWith("image/")
-          ? `![${file.name || "图片"}](${ref})`
-          : `[${file.name || "附件"}](${ref})`;
+        const isImage = isImageFile(file);
+        const result = await resolveUploadTarget(file, noteId, imageHost);
+        if (result.kind === "remote") {
+          recordImageUpload(file.size);
+        } else if (result.error) {
+          toastWarning(`图床上传失败，已保存到本地：${result.error}`, 6000);
+        }
+        const alt = (file.name || (isImage ? "图片" : "附件")).replace(/[\[\]\r\n]/g, " ").trim();
+        const md = isImage ? `![${alt || "图片"}](${result.target})` : `[${alt || "附件"}](${result.target})`;
         editorRef.current?.insertText(`\n${md}\n`);
       }
     },
-    [noteId],
+    [noteId, imageHost, recordImageUpload],
   );
 
   /**
@@ -290,7 +305,11 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
       }
       if (kind === "html") {
         // Mermaid → 内联 SVG；附件 → data URL，保证单文件离线可看
-        const body = await prepareExportHtml(await renderForExport(), { mermaid: "svg" });
+        const body = await prepareExportHtml(await renderForExport(), {
+          mermaid: "svg",
+          onUnresolved: (urls) =>
+            toastWarning(`${urls.length} 个外链资源无法内联，导出文件中的图片需要联网查看`, 6000),
+        });
         const doc = await buildHtmlDocument(title, body, css);
         downloadText(safeFilename(title, "html"), doc, "text/html");
         toastSuccess("已导出 HTML");
@@ -298,7 +317,10 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
       }
       if (kind === "docx") {
         // htmlToDocx 内部会做自包含处理（附件 data URL、Mermaid → PNG、原生公式）
-        const blob = await htmlToDocx(await renderForExport(), title);
+        const blob = await htmlToDocx(await renderForExport(), title, {
+          onUnresolved: (urls) =>
+            toastWarning(`${urls.length} 个外链图片无法下载，DOCX 中已跳过`, 6000),
+        });
         downloadBlob(safeFilename(title, "docx"), blob);
         toastSuccess("已导出 DOCX");
         return;

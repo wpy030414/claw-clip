@@ -78,6 +78,16 @@ export async function getBlob(id: string): Promise<BlobRecord | undefined> {
   );
 }
 
+/** 记录附件已上传到图床的外链（云快照组装时复用，避免重复上传）。 */
+export async function setBlobRemoteUrl(id: string, url: string): Promise<void> {
+  await withTx(blobStoreName, "readwrite", async (tx) => {
+    const store = tx.objectStore(blobStoreName);
+    const record = await idbReq<BlobRecord | undefined>(store.get(id));
+    if (!record) return;
+    store.put({ ...record, remoteUrl: url, remoteUploadedAt: Date.now() });
+  });
+}
+
 /**
  * 解析附件为可渲染的 object URL。
  *

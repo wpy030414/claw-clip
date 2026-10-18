@@ -8,6 +8,10 @@ import { describe, expect, it } from "vitest";
 import { LocalDataSource } from "@/data/local";
 import { BLOB_URL_SCHEME } from "@/data/blobStore";
 import { makeNote, makeBlob } from "@/test/factories";
+import type { BackupPayload } from "@/types/backup";
+import { globalConfig } from "@/config";
+import { withTx } from "@/data/db";
+import { idbReq } from "@/utils/idb";
 
 const ds = new LocalDataSource();
 
@@ -254,5 +258,68 @@ describe("LocalDataSource 文件夹（v2）", () => {
     await ds.upsertNote(makeNote({ id: "b", folderId: "f-x" }));
     await ds.deleteNote("a");
     expect(await ds.getNote("b")).toBeDefined();
+  });
+});
+
+describe("LocalDataSource.replaceAll / mergeAll", () => {
+  it("replaceAll 原子替换三张表，并保留 meta", async () => {
+    await ds.upsertNote(makeNote({ id: "old-note", title: "旧笔记" }));
+    await ds.upsertFolder({ id: "old-folder", name: "旧文件夹", parentId: null, createdAt: 1, updatedAt: 1 });
+    await withTx(globalConfig.storeNames.meta, "readwrite", (tx) =>
+      idbReq(tx.objectStore(globalConfig.storeNames.meta).put({ key: "marker", value: 42 })),
+    );
+
+    const blobId = "blob-1";
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: 1,
+      notes: [makeNote({ id: "new-note", title: "新笔记", content: `![x](clawclip://blob/${blobId})` })],
+      folders: [{ id: "new-folder", name: "新文件夹", parentId: null, createdAt: 1, updatedAt: 1 }],
+      blobs: [{ id: blobId, noteId: "new-note", mime: "text/plain", size: 3, base64: btoa("abc") }],
+    };
+
+    await expect(ds.replaceAll(payload)).resolves.toEqual({ notes: 1, blobs: 1 });
+
+    expect(await ds.getNote("old-note")).toBeUndefined();
+    expect(await ds.getNote("new-note")).toBeDefined();
+    expect((await ds.listFolders()).map((f) => f.id)).toEqual(["new-folder"]);
+    // 正文仍引用该附件，reconcile 后应保留
+    expect(await ds.getAttachment(blobId)).toBeDefined();
+    // meta 不受清空影响
+    const meta = await withTx<Record<string, unknown> | undefined>(
+      globalConfig.storeNames.meta,
+      "readonly",
+      (tx) => idbReq(tx.objectStore(globalConfig.storeNames.meta).get("marker")),
+    );
+    expect(meta).toMatchObject({ value: 42 });
+  });
+
+  it("mergeAll：较新者胜、本地独有保留、缺失附件补齐", async () => {
+    await ds.upsertNote(makeNote({ id: "keep", content: "本地较新", updatedAt: 3000 }));
+    await ds.upsertNote(makeNote({ id: "update", content: "旧内容", updatedAt: 1000 }));
+
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: 1,
+      notes: [
+        makeNote({ id: "keep", content: "远端较旧", updatedAt: 2000 }),
+        makeNote({ id: "update", content: "远端较新", updatedAt: 5000 }),
+        makeNote({ id: "fresh", content: "新增", updatedAt: 1 }),
+      ],
+      folders: [],
+      blobs: [{ id: "new-blob", noteId: "fresh", mime: "text/plain", size: 3, base64: btoa("abc") }],
+    };
+
+    const result = await ds.mergeAll(payload);
+    expect(result).toMatchObject({
+      notesAdded: 1,
+      notesUpdated: 1,
+      notesSkipped: 1,
+      blobsAdded: 1,
+    });
+
+    expect((await ds.getNote("keep"))!.content).toBe("本地较新");
+    expect((await ds.getNote("update"))!.content).toBe("远端较新");
+    expect(await ds.getNote("fresh")).toBeDefined();
   });
 });

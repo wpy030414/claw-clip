@@ -1,10 +1,12 @@
 /**
  * notesStore 单测：笔记树数据态 + 乐观更新 + 派生字段重算。
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useNotesStore } from "@/stores/notesStore";
 import { datasource } from "@/data/datasource";
 import { emptyFolder } from "@/types/folder";
+import { makeNote } from "@/test/factories";
+import type { BackupPayload } from "@/types/backup";
 
 beforeEach(() => {
   // 重置 store 状态
@@ -14,6 +16,7 @@ beforeEach(() => {
     folders: [],
     treeNotes: [],
     revision: 0,
+    dataEpoch: 0,
   });
 });
 
@@ -264,5 +267,74 @@ describe("notesStore.exportBackup / reset", () => {
 
     expect(useNotesStore.getState().treeNotes).toHaveLength(0);
     expect(useNotesStore.getState().activeNote).toBeNull();
+  });
+});
+
+describe("notesStore 数据代际与导入", () => {
+  it("过期 epoch 的保存被丢弃（导入/清空后旧会话不再写回）", async () => {
+    const id = await useNotesStore.getState().createNote();
+    const epoch = useNotesStore.getState().dataEpoch;
+
+    await useNotesStore.getState().saveNote(id, { content: "# 不应写入" }, epoch - 1);
+
+    const saved = await datasource.getNote(id);
+    expect(saved!.content).not.toBe("# 不应写入");
+  });
+
+  it("reset 会先 drain 在途保存，清空后不会被写回来", async () => {
+    const id = await useNotesStore.getState().createNote();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const spy = vi.spyOn(datasource, "upsertNote").mockImplementation(async (note) => {
+      await gate;
+      return note;
+    });
+
+    const saving = useNotesStore.getState().saveNote(id, { content: "# 竞态" });
+    // 让 saveNote 走到 upsertNote（被 gate 挡住）
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resetting = useNotesStore.getState().reset();
+    release();
+    await Promise.all([saving, resetting]);
+
+    spy.mockRestore();
+    expect(await datasource.getNote(id)).toBeUndefined();
+    expect(useNotesStore.getState().dataEpoch).toBe(1);
+  });
+
+  it("importBackup replace 模式用快照原子覆盖本地", async () => {
+    await useNotesStore.getState().createNote();
+
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: 1,
+      notes: [makeNote({ id: "remote-only", title: "云端笔记", content: "# 云端笔记" })],
+      folders: [],
+      blobs: [],
+    };
+
+    await useNotesStore.getState().importBackup(payload, "replace");
+
+    expect(await datasource.countAll()).toBe(1);
+    expect(await datasource.getNote("remote-only")).toBeDefined();
+    expect(useNotesStore.getState().treeNotes.map((n) => n.id)).toEqual(["remote-only"]);
+  });
+
+  it("importBackup merge 默认较新者胜", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content: "# 本地较新" });
+
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: 1,
+      notes: [makeNote({ id, content: "# 远端较旧", updatedAt: 1000 })],
+      folders: [],
+      blobs: [],
+    };
+
+    await useNotesStore.getState().importBackup(payload, "merge");
+    expect((await datasource.getNote(id))!.content).toBe("# 本地较新");
   });
 });

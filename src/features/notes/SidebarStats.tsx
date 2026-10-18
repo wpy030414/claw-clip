@@ -7,9 +7,11 @@
 import { useEffect, useState } from "react";
 import { formatBytes, getDbStats, type DbStats } from "@/data/stats";
 import { useNotesStore } from "@/stores/notesStore";
+import { useUiStore } from "@/stores/uiStore";
 
 export function SidebarStats() {
   const revision = useNotesStore((s) => s.revision);
+  const setStorageDialogOpen = useUiStore((s) => s.setStorageDialogOpen);
   const [stats, setStats] = useState<DbStats | null>(null);
 
   useEffect(() => {
@@ -30,7 +32,14 @@ export function SidebarStats() {
   }, [revision]);
 
   return (
-    <div className="sidebar-stats" data-testid="sidebar-stats" title="IndexedDB 数据统计">
+    <button
+      type="button"
+      className="sidebar-stats"
+      data-testid="sidebar-stats"
+      title="查看存储空间"
+      aria-haspopup="dialog"
+      onClick={() => setStorageDialogOpen(true)}
+    >
       <span className="material-symbols-outlined" aria-hidden="true">
         database
       </span>
@@ -45,6 +54,6 @@ export function SidebarStats() {
       ) : (
         <span>统计中…</span>
       )}
-    </div>
+    </button>
   );
 }

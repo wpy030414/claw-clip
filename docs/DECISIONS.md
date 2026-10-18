@@ -1117,3 +1117,101 @@ E2E 覆盖「敲 `*` 得到 `*hello*` 且内文仍选中」「连敲逐层加标
 **验证**：`markdownRender.spec.ts` 覆盖五种类型、同一行正文、空正文、多段正文、
 普通引用与后续段落不被误判、大小写不敏感；E2E 覆盖预览容器/标题/类型色条与
 DOCX 往返导出后正文与标题仍在。
+
+---
+
+## ADR-046 · 存储空间大 dialog 与三种用量口径 ✅
+
+**背景**：侧栏底部的统计胶囊只显示「共 N 个笔记 · xxx KB」，用户无法看清空间去向，也没有
+任何入口做备份或清理。需求是把胶囊变成入口，打开一个**大** dialog（约 720–880px 宽），
+同时承载用量、云同步、图床与备份四类操作。
+
+**决策**：
+- **入口与挂载**：`SidebarStats` 的 `div` 改为 `button`（保留 testid 与文本），点击写
+  `uiStore.storageDialogOpen`；`StorageDialog` 挂在 `AppShell` 而不是 `SidebarBody`——
+  既不受移动端 `.note-list-pane { zoom: 1.12 }` 影响，也不会因侧栏收起/断点切换被卸载。
+  尺寸走 M3E 的 `--m3e-dialog-min/max-width`、`--m3e-dialog-max-height` 变量。
+- **三种数字分开展示**：`data/storageReport.ts` 同时给出
+  1) 本应用数据（notes/folders/blobs/meta 的 JSON 字节 + 附件二进制，近似值）；
+  2) IndexedDB 实际占用（`navigator.storage.estimate().usageDetails.indexedDB`）；
+  3) 整站用量 / 配额。三者语义不同，UI 用文案明确区分，不再混成一个「占用」。
+- **排行不重复计算**：附件归属以**笔记正文**的 `clawclip://` 引用为准（`attachmentIds`
+  可能是陈旧索引）；共享附件在笔记排行中按 `size / 引用笔记数` 均摊，附件排行里每条只出现
+  一次。恒等式 `Σ笔记 + 孤儿 + 文件夹 + 附件元数据 + meta = appBytes` 由单测锁定。
+- **分区**：概览 / 云同步 / 图床 / 备份（导出、导入预览、合并/覆盖、清空）。
+
+**理由**：存储是「多来源、多口径」的概念，把近似载荷、浏览器实际占用与整站配额混为一谈
+只会制造误解；挂在 AppShell 则让同一份 dialog 在桌面与移动端表现一致。
+
+**后果**：打开 dialog 会全表扫描一次（与侧栏统计同量级），仅打开时计算；概览对
+`revision/dataEpoch` 做 400ms 防抖刷新，并用请求序号防止旧结果覆盖新结果。浏览器不提供
+`storage.estimate` 时只降级提示，不阻塞其他分区。
+
+**验证**：`storageReport.spec.ts` 覆盖分解求和、共享附件均摊、孤儿字节、陈旧 `attachmentIds`
+与配额缺失降级；E2E 覆盖打开/关闭、大尺寸、笔记排行与移动端 390px 不溢出。
+
+---
+
+## ADR-047 · 云同步：GitHub Gist 手动全量快照 ✅
+
+**背景**：PRD 原本把云同步列为非目标。用户要求纯前端也能把数据带走/带回。评估过三条路线：
+
+- **OAuth PKCE**：Google Drive/Dropbox 支持公共客户端，但 GitHub OAuth App 不支持 PKCE
+  （需要 client secret 或 device flow），接入与维护成本高；
+- **WebDAV**：依赖服务端 CORS，兼容性不可控；
+- **GitHub Gist + PAT**：`api.github.com` 支持浏览器 CORS，用户自建细粒度令牌即可，
+  无需任何后端。选择这条。
+
+**决策**：
+- **手动全量快照，不做自动合并**：推送 = 覆盖 gist 中单个 `clawclip-backup.json`；
+  拉取先取回并校验，再由用户显式选择「合并（按 `updatedAt` 较新者胜）」或
+  「覆盖（`replaceAll()` 单事务清空 + 写入）」。没有删除墓碑、版本向量与自动冲突解决。
+- **PAT 默认记住**（用户已确认）：写入 localStorage（`claw-clip-integrations`），界面固定
+  提示明文风险；取消「记住」或点「清除」会立即从内存与 localStorage 删除。PAT 永不进入
+  备份/快照（序列化走白名单），raw_url 请求不带 Authorization，错误信息不拼接请求头。
+- **快照不加密**（用户已确认）：secret gist 只是不出现在列表，拿到链接即可读。
+- **大小策略**：Gist 文件超过 1MB 时 API 的 `content` 会截断，必须走 `raw_url`；超过
+  10MB 时 raw_url 也无法完整获取。快照组装时图片一律转图床外链，过大非图片附件从最大
+  开始剔除二进制、正文保留 `clawclip://` 本地引用，直到快照 ≤10MB；仅笔记正文超限则拒绝
+  推送并提示改用本地 `.dat`。
+- **写入代际**：导入/清空前 `dataEpoch + 1` 并 `drainWrites()` 等待在途保存；旧编辑器会话
+  的防抖/卸载保存携带挂载时的 epoch，代际不一致直接丢弃——否则 700ms 自动保存会把刚清空
+  的数据写回来。
+
+**理由**：纯前端 + 个人工具的场景里，「用户自己的令牌 + 用户主动触发的快照」是最小可信
+方案；隐式自动同步反而会把冲突与数据丢失风险藏起来。
+
+**后果**：合并依赖本机时钟（时钟偏差可能让旧版本覆盖新版本），属已知限制；拉取被剔除的
+附件会留下悬空 `clawclip://` 引用（用户已确认「只保留本地引用」）；不支持多人同时编辑。
+
+**验证**：`cloudSync.spec.ts` 覆盖 token 校验、创建/更新、截断走 raw_url（且不带
+Authorization）、错误映射与非法 payload；`snapshot.spec.ts` 覆盖图片转外链、失败回填
+base64、缓存复用、超限剔除与孤儿附件；E2E 用 `page.route` mock GitHub API，断言推送体
+`public:false`、图片已转外链、请求体不含 token，以及合并/覆盖拉取。
+
+---
+
+## ADR-048 · 图床作为可选的图片上传目标 ✅
+
+**背景**：图片附件存 IndexedDB 会占本地空间，也不便于把笔记分享出去。`img.scdn.io`
+提供无鉴权、CORS 放开的免费图床（`POST /api/v1.php`，multipart 字段 `image`）。
+
+**决策**：
+- **默认本地**，在「存储空间 → 图床」显式切到 `img.scdn.io` 才生效；只影响之后的粘贴/
+  拖入，已有附件与外链不迁移。
+- **失败回退**：上传失败（网络、413、429、返回异常）时回退 `saveBlob` + `clawclip://`，
+  并用 Snackbar 说明原因；非图片文件即使在图床目标下也存本地。
+- **限制与提示**：单张 ≤20MB；串行上传并保证 ≥1050ms 间隔（5 次/5 秒），429 按
+  `Retry-After` 重试一次；UI 固定提示 **60 天无人访问自动删除**、外链公开可读、不参与
+  引用计数与备份、删除笔记不会删除远端图片。
+- **云快照**：推送时图片一律上传图床并在快照中写成外链（见 ADR-047）；本地笔记不变。
+- **导出**：HTML/PDF 会尝试把外链图片内联为 data URL，DOCX 会下载外链图片；CORS/网络
+  失败时保留外链（HTML/PDF 需联网查看，DOCX 跳过图片），并通过 Snackbar 提示失败数量。
+
+**理由**：图床是「用隐私与持久性换空间」的取舍，必须由用户显式开启，且失败时不能丢图。
+
+**后果**：外链图片不进入 `blobs`、不参与 `hydrateMarkdown` 与 `reconcileBlobRefs`；本地
+备份与云快照都不包含其二进制；图床删除后旧笔记会缺图。
+
+**验证**：`imageHost.spec.ts` 覆盖 multipart 字段、成功解析、413/429、20MB 上限与回退；
+E2E 覆盖切换目标、成功写外链（`blobs` 计数为 0）、失败回退本地并提示、60 天警告文案。

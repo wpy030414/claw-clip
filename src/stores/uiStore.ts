@@ -51,6 +51,8 @@ interface UiState {
   /** 当前笔记大纲（编辑器写入，侧栏消费）。 */
   outline: OutlineItem[];
   commandPaletteOpen: boolean;
+  /** 「存储空间」大 dialog 是否打开（从侧栏底部统计胶囊进入）。 */
+  storageDialogOpen: boolean;
   /** 桌面大纲侧栏开关。 */
   tocOpen: boolean;
   /**
@@ -66,6 +68,7 @@ interface UiState {
   setSidebarTab: (tab: SidebarTab) => void;
   setOutline: (items: OutlineItem[]) => void;
   setCommandPalette: (open: boolean) => void;
+  setStorageDialogOpen: (open: boolean) => void;
   setViewMode: (mode: ViewMode | null) => void;
   toggleToc: () => void;
   setTocOpen: (open: boolean) => void;
@@ -80,6 +83,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   sidebarTab: "docs",
   outline: [],
   commandPaletteOpen: false,
+  storageDialogOpen: false,
   tocOpen: true,
   viewMode: null,
   confirmQueue: [],
@@ -90,6 +94,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   setOutline: (items) => set({ outline: items }),
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
+  setStorageDialogOpen: (open) => set({ storageDialogOpen: open }),
   setViewMode: (mode) => set({ viewMode: mode }),
   toggleToc: () => set({ tocOpen: !get().tocOpen }),
   setTocOpen: (open) => set({ tocOpen: open }),

@@ -15,7 +15,7 @@
  */
 import { create } from "zustand";
 import { datasource } from "@/data/datasource";
-import { extractBlobRefIds } from "@/data/blobStore";
+import { extractBlobRefIds, releaseBlobUrls } from "@/data/blobStore";
 import { emptyNote, toSummary } from "@/types/note";
 import type { Note, NoteSummary } from "@/types/note";
 import { emptyFolder } from "@/types/folder";
@@ -32,6 +32,28 @@ import { countWords, deriveTitle, makeExcerpt } from "@/utils/markdown";
  */
 const noteCache = new Map<string, Note>();
 
+/**
+ * 在途写库 Promise。
+ *
+ * 导入/清空前必须 drain：否则 700ms 防抖保存可能落在 clear 之后，
+ * 把刚清掉的笔记又写回来（IDB 事务按创建顺序执行）。
+ */
+const pendingWrites = new Set<Promise<unknown>>();
+
+function trackWrite<T>(promise: Promise<T>): Promise<T> {
+  const tracked = promise.finally(() => {
+    pendingWrites.delete(tracked);
+  });
+  pendingWrites.add(tracked);
+  return tracked;
+}
+
+async function drainWrites(): Promise<void> {
+  while (pendingWrites.size > 0) {
+    await Promise.allSettled([...pendingWrites]);
+  }
+}
+
 interface NotesState {
   activeNoteId: string | null;
   activeNote: Note | null;
@@ -41,6 +63,8 @@ interface NotesState {
   treeNotes: NoteSummary[];
   /** 数据修订号：CRUD 后递增，供侧栏统计等派生视图刷新。 */
   revision: number;
+  /** 数据代际：清空/覆盖导入后 +1，旧编辑器会话的延迟保存据此丢弃。 */
+  dataEpoch: number;
 
   /** 加载侧栏笔记树（全部笔记，按标题排序；CRUD 时增量同步）。 */
   loadTree: () => Promise<void>;
@@ -50,14 +74,20 @@ interface NotesState {
   closeNote: () => void;
   /** 新建空笔记并落库（folderId 指定归属文件夹），返回新 id。 */
   createNote: (folderId?: string | null) => Promise<string>;
-  /** 按 id 保存笔记；只有真实变更才重算派生字段、刷新 updatedAt 并落库。 */
-  saveNote: (id: string, patch: Partial<Note>) => Promise<void>;
+  /**
+   * 按 id 保存笔记；只有真实变更才重算派生字段、刷新 updatedAt 并落库。
+   * 传入 epoch 时，若数据代际已变化（导入/清空），这次保存直接丢弃。
+   */
+  saveNote: (id: string, patch: Partial<Note>, epoch?: number) => Promise<void>;
   /** 保存当前活动笔记（= saveNote(activeNoteId, patch)）。 */
   saveActive: (patch: Partial<Note>) => Promise<void>;
   /** 删除笔记（乐观移除 + 按引用计数释放附件）。 */
   remove: (id: string) => Promise<void>;
-  /** 导入备份。 */
-  importBackup: (payload: BackupPayload) => Promise<void>;
+  /**
+   * 导入备份：`merge` 较新者胜；`replace` 原子覆盖（清空后写入）。
+   * 会递增 dataEpoch、drain 在途写入，并重载文件夹/笔记树。
+   */
+  importBackup: (payload: BackupPayload, mode?: "merge" | "replace") => Promise<void>;
   /** 导出全库，返回 payload（调用方负责下载）。 */
   exportBackup: () => Promise<BackupPayload>;
   /** 清空全部数据。 */
@@ -79,6 +109,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
   folders: [],
   treeNotes: [],
   revision: 0,
+  dataEpoch: 0,
 
   async loadTree() {
     const notes = await datasource.listAllNotes();
@@ -104,7 +135,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
 
   async createNote(folderId = null) {
     const note = emptyNote(Date.now(), folderId);
-    await datasource.upsertNote(note);
+    await trackWrite(datasource.upsertNote(note));
     noteCache.set(note.id, note);
     set({
       treeNotes: [toSummary(note), ...get().treeNotes],
@@ -115,7 +146,9 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
     return note.id;
   },
 
-  async saveNote(id, patch) {
+  async saveNote(id, patch, epoch) {
+    // 数据代际已变化（刚导入/清空）：旧会话的防抖/卸载保存一律丢弃
+    if (epoch !== undefined && epoch !== get().dataEpoch) return;
     // ★ 必须按 id 取源数据：切笔记后 activeNote 已指向别的笔记，
     //   旧会话的延迟保存若直接写 activeNote 会把 A 的正文串到 B。
     const cur = noteCache.get(id) ?? (await datasource.getNote(id));
@@ -168,8 +201,8 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
     });
 
     noteCache.set(next.id, next);
-    // 落库
-    await datasource.upsertNote(next);
+    // 落库（登记为在途写，导入/清空会先等它完成）
+    await trackWrite(datasource.upsertNote(next));
   },
 
   async saveActive(patch) {
@@ -188,15 +221,37 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
       revision: get().revision + 1,
     });
 
-    await datasource.deleteNote(id);
+    await trackWrite(datasource.deleteNote(id));
   },
 
-  async importBackup(payload) {
-    await datasource.importAll(payload);
+  async importBackup(payload, mode = "merge") {
+    // 先换代际并等旧写入落库，避免清空/覆盖后又被在途保存写回来
+    const nextEpoch = get().dataEpoch + 1;
+    set({ dataEpoch: nextEpoch });
+    await drainWrites();
+
+    if (mode === "replace") await datasource.replaceAll(payload);
+    else await datasource.mergeAll(payload);
+
     noteCache.clear();
-    // 导入后重载文件夹与侧栏笔记树
+    releaseBlobUrls();
     await get().loadFolders();
     await get().loadTree();
+
+    // 当前打开的笔记可能已被覆盖：能命中就刷新内容，不能命中就清空
+    const activeId = get().activeNoteId;
+    if (activeId) {
+      const stillExists = get().treeNotes.some((n) => n.id === activeId);
+      if (!stillExists) {
+        set({ activeNoteId: null, activeNote: null });
+      } else {
+        const fresh = await datasource.getNote(activeId);
+        if (fresh) {
+          noteCache.set(activeId, fresh);
+          set({ activeNote: fresh });
+        }
+      }
+    }
     set({ revision: get().revision + 1 });
   },
 
@@ -205,8 +260,14 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
   },
 
   async reset() {
+    // 与 importBackup 同理：先换代际 + drain，防止在途保存把数据写回来
+    const nextEpoch = get().dataEpoch + 1;
+    set({ dataEpoch: nextEpoch });
+    await drainWrites();
+
     await datasource.clear();
     noteCache.clear();
+    releaseBlobUrls();
     set({
       treeNotes: [],
       activeNoteId: null,

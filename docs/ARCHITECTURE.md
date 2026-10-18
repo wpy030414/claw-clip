@@ -208,7 +208,7 @@ IndexedDB `claw-clip-v2`（v3，与旧库物理隔离）：
 |---|---|---|---|
 | `notes` | id | updatedAt/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId） |
 | `folders` | id | parentId/updatedAt | 文件夹（扁平存储 + `order` 手动排序） |
-| `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer）+ `refCount` 引用计数 |
+| `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer）+ `refCount` 引用计数 + 可选 `remoteUrl`（图床缓存） |
 | `meta` | key | — | schemaVersion 等 |
 
 `datasource.ts` 门面按 `enableStoringLocally` 切 Local/Remote（占位）。`db.ts` 提供
@@ -218,14 +218,34 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 仍保留在数据层（供单测与将来复用），当前 UI 不再使用。`loadFolders()` 会把历史嵌套文件夹
 （非 null `parentId`）提升为根级并回写，保证「文件夹不嵌套」在数据层也成立。
 
+### 6.1 存储空间与外部集成
+
+- **统计口径**（`data/storageReport.ts`）：单只读事务读四张表；笔记/文件夹/meta 按 JSON
+  UTF-8 字节估算，附件用 `size` + 元数据 JSON。附件归属以**正文引用**为真相源，共享附件在
+  笔记排行中按引用笔记数均摊；总量只在 `blobs` 计一次。另列 `navigator.storage.estimate()`
+  的整站用量/配额与 `usageDetails.indexedDB`，UI 明确区分三种数字。
+- **图片上传目标**（`data/imageHost.ts` + `stores/integrationStore.ts`）：默认写本地
+  `blobs`；切到 `img.scdn.io` 后，`EditorPane.insertFiles` 对图片调用
+  `POST /api/v1.php`（multipart 字段 `image`，无鉴权，串行限流 5 次/5 秒），成功插入外链，
+  失败回退 `saveBlob` 并提示。外链不参与 `clawclip://` 引用计数与水合。
+- **云快照**（`data/snapshot.ts` + `data/cloudSync.ts`）：`exportAll()` 后只打包正文引用的
+  附件；图片先上传图床并把快照副本里的 `clawclip://` 换成外链（结果缓存进
+  `BlobRecord.remoteUrl`），本地笔记保持不变。快照超过 10MB 时按体积剔除最大的非图片附件
+  （正文保留本地引用）直到达标；节点正文自身超限则拒绝推送。
+- **导入/清空的写入代际**（`stores/notesStore.ts`）：导入与清空前先递增 `dataEpoch` 并
+  `drainWrites()` 等待在途 upsert；`useMarkdownSession` 的防抖/卸载保存携带挂载时的
+  epoch，代际不一致直接丢弃。`replaceAll()` 在单事务里清空 + 写入，避免「清空了却没写进去」。
+  `EditorPage` 以 `${noteId}-${dataEpoch}` 作为编辑器 key，导入后强制重挂载读取新内容。
+
 ## 7. 测试金字塔
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
-  自动保存与快捷键等（166 例）。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，37 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端、导入语义等（286 例）。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，61 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
-  文件夹折叠与删除确认/上传导入/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简。
+  文件夹折叠与删除确认/上传导入/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
+  全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`；
   确定性信号用 `expect.poll` / `waitForSelector`。
 

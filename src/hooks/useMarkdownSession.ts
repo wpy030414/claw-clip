@@ -30,6 +30,8 @@ export function useMarkdownSession(noteId: string | null): Result {
   const latestRef = useRef("");
   /** 已成功载入的笔记 id：保存时只写回同一条笔记，避免切笔记后串写。 */
   const loadedIdRef = useRef<string | null>(null);
+  /** 本会话启动时的数据代际；导入/清空后旧会话的保存会被 store 丢弃。 */
+  const epochRef = useRef(useNotesStore.getState().dataEpoch);
   /**
    * 本会话绑定的笔记 id（EditorPane 以 key={noteId} 重挂载，实例与笔记一一对应）。
    * 防抖回调必须用它而不是 store 的 activeNote——切笔记后 activeNote 已经变了。
@@ -42,7 +44,7 @@ export function useMarkdownSession(noteId: string | null): Result {
     debounce(() => {
       const id = sessionIdRef.current;
       if (id && loadedIdRef.current === id) {
-        void saveNote(id, { content: latestRef.current });
+        void saveNote(id, { content: latestRef.current }, epochRef.current);
       }
     }, AUTOSAVE_WAIT),
   ).current;
@@ -53,6 +55,7 @@ export function useMarkdownSession(noteId: string | null): Result {
       setLoadedId(null);
       return;
     }
+    epochRef.current = useNotesStore.getState().dataEpoch;
     let cancelled = false;
     void (async () => {
       await openNote(noteId);
@@ -69,7 +72,7 @@ export function useMarkdownSession(noteId: string | null): Result {
       // 卸载立即落库（内存 + 异步 IDB），避免切笔记/断点切换丢最后一段输入
       throttledSave.cancel();
       if (loadedIdRef.current === noteId) {
-        void saveNote(noteId, { content: latestRef.current });
+        void saveNote(noteId, { content: latestRef.current }, epochRef.current);
       }
       loadedIdRef.current = null;
     };
@@ -87,7 +90,7 @@ export function useMarkdownSession(noteId: string | null): Result {
   const saveNow = useCallback(async () => {
     throttledSave.cancel();
     const id = sessionIdRef.current;
-    if (id) await saveNote(id, { content: latestRef.current });
+    if (id) await saveNote(id, { content: latestRef.current }, epochRef.current);
   }, [throttledSave, saveNote]);
 
   // ★ 由 noteId / loadedId 派生 loading，而不是命令式 setLoading：

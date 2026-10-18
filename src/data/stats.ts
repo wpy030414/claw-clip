@@ -23,7 +23,7 @@ export interface DbStats {
 
 const encoder = new TextEncoder();
 
-function jsonBytes(value: unknown): number {
+export function jsonBytes(value: unknown): number {
   try {
     return encoder.encode(JSON.stringify(value)).byteLength;
   } catch {

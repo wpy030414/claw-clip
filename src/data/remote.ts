@@ -13,7 +13,7 @@ import type { Note, NoteFilter, NoteSummary } from "@/types/note";
 import type { Folder } from "@/types/folder";
 import type { BlobRecord } from "@/types/blob";
 import type { BackupPayload } from "@/types/backup";
-import type { DataSource } from "./datasource";
+import type { DataSource, MergeResult } from "./datasource";
 import type { QueryResult } from "./query";
 
 function notImplemented(method: string): never {
@@ -67,6 +67,12 @@ export class RemoteDataSource implements DataSource {
   }
   async importAll(_payload: BackupPayload): Promise<{ notes: number; blobs: number }> {
     return notImplemented("importAll");
+  }
+  async replaceAll(_payload: BackupPayload): Promise<{ notes: number; blobs: number }> {
+    return notImplemented("replaceAll");
+  }
+  async mergeAll(_payload: BackupPayload): Promise<MergeResult> {
+    return notImplemented("mergeAll");
   }
   async clear(): Promise<void> {
     return notImplemented("clear");

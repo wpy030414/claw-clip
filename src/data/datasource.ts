@@ -16,6 +16,17 @@ import type { QueryResult } from "./query";
 
 export type { QueryResult };
 
+/** 合并导入的统计结果。 */
+export interface MergeResult {
+  notesAdded: number;
+  notesUpdated: number;
+  notesSkipped: number;
+  foldersAdded: number;
+  foldersUpdated: number;
+  blobsAdded: number;
+  blobsKept: number;
+}
+
 export interface DataSource {
   /** 新增或原地更新笔记（put 覆盖，永不改 id，落库刷新 updatedAt）。 */
   upsertNote(note: Note): Promise<Note>;
@@ -50,8 +61,16 @@ export interface DataSource {
   reconcileAttachmentRefs(): Promise<{ kept: number; purged: number }>;
   /** 导出全库（notes + blobs base64 化）。 */
   exportAll(): Promise<BackupPayload>;
-  /** 导入备份，返回写入计数。 */
+  /** 导入备份（合并且同 id 直接覆盖），返回写入计数。 */
   importAll(payload: BackupPayload): Promise<{ notes: number; blobs: number }>;
+  /**
+   * 覆盖导入：单事务清空 notes/folders/blobs 后写入快照（原子替换，失败不留半套数据）。
+   */
+  replaceAll(payload: BackupPayload): Promise<{ notes: number; blobs: number }>;
+  /**
+   * 合并导入：按 id 比较 updatedAt，较新者胜；本地独有内容保留；附件本地缺失才写入。
+   */
+  mergeAll(payload: BackupPayload): Promise<MergeResult>;
   /** 清空全部数据（危险操作，UI 层须二次确认）。 */
   clear(): Promise<void>;
   /** notes 总数。 */

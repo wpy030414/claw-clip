@@ -24,7 +24,7 @@ import {
   saveBlob,
 } from "./blobStore";
 import { queryNotes, type QueryResult } from "./query";
-import type { DataSource } from "./datasource";
+import type { DataSource, MergeResult } from "./datasource";
 
 const notesStore = globalConfig.storeNames.notes;
 const blobsStore = globalConfig.storeNames.blobs;
@@ -207,6 +207,106 @@ export class LocalDataSource implements DataSource {
   }
 
   /** 清空 notes + folders + blobs（meta 保留）。危险操作，UI 层须二次确认。 */
+  /**
+   * 覆盖导入：先解码附件，再在**单个事务**里清空三张表并写入快照。
+   * 事务失败则本地数据保持原样（不会出现「清空了但没写进去」）。
+   */
+  async replaceAll(payload: BackupPayload): Promise<{ notes: number; blobs: number }> {
+    const blobRecords: BlobRecord[] = payload.blobs.map((b) => ({
+      id: b.id,
+      noteId: b.noteId,
+      mime: b.mime,
+      size: b.size,
+      data: base64ToBlob(b.base64, b.mime),
+      createdAt: Date.now(),
+      refCount: 0, // 由 reconcileBlobRefs 按正文重算
+    }));
+
+    await withTx([notesStore, foldersStore, blobsStore], "readwrite", (tx) => {
+      const notesObj = tx.objectStore(notesStore);
+      notesObj.clear();
+      for (const note of payload.notes) notesObj.put(note);
+
+      const foldersObj = tx.objectStore(foldersStore);
+      foldersObj.clear();
+      for (const folder of payload.folders ?? []) foldersObj.put(folder);
+
+      const blobsObj = tx.objectStore(blobsStore);
+      blobsObj.clear();
+      for (const record of blobRecords) blobsObj.put(record);
+    });
+
+    await reconcileBlobRefs();
+    return { notes: payload.notes.length, blobs: blobRecords.length };
+  }
+
+  /**
+   * 合并导入：较新者胜（按 updatedAt），本地独有内容保留，附件本地缺失才写入。
+   * 完成后以正文为准重算引用计数并回收孤儿。
+   */
+  async mergeAll(payload: BackupPayload): Promise<MergeResult> {
+    const result: MergeResult = {
+      notesAdded: 0,
+      notesUpdated: 0,
+      notesSkipped: 0,
+      foldersAdded: 0,
+      foldersUpdated: 0,
+      blobsAdded: 0,
+      blobsKept: 0,
+    };
+    const now = Date.now();
+
+    await withTx([notesStore, foldersStore, blobsStore], "readwrite", async (tx) => {
+      const notesObj = tx.objectStore(notesStore);
+      for (const note of payload.notes) {
+        const cur = await idbReq<Note | undefined>(notesObj.get(note.id));
+        if (!cur) {
+          notesObj.put(note);
+          result.notesAdded += 1;
+        } else if (note.updatedAt > cur.updatedAt) {
+          notesObj.put(note);
+          result.notesUpdated += 1;
+        } else {
+          result.notesSkipped += 1;
+        }
+      }
+
+      const foldersObj = tx.objectStore(foldersStore);
+      for (const folder of payload.folders ?? []) {
+        const cur = await idbReq<Folder | undefined>(foldersObj.get(folder.id));
+        if (!cur) {
+          foldersObj.put(folder);
+          result.foldersAdded += 1;
+        } else if (folder.updatedAt > cur.updatedAt) {
+          foldersObj.put(folder);
+          result.foldersUpdated += 1;
+        }
+      }
+
+      const blobsObj = tx.objectStore(blobsStore);
+      for (const blob of payload.blobs) {
+        const cur = await idbReq<BlobRecord | undefined>(blobsObj.get(blob.id));
+        if (cur) {
+          result.blobsKept += 1;
+          continue;
+        }
+        blobsObj.put({
+          id: blob.id,
+          noteId: blob.noteId,
+          mime: blob.mime,
+          size: blob.size,
+          data: base64ToBlob(blob.base64, blob.mime),
+          createdAt: now,
+          refCount: 0,
+        });
+        result.blobsAdded += 1;
+      }
+    });
+
+    await reconcileBlobRefs();
+    return result;
+  }
+
   async clear(): Promise<void> {
     await withTx([notesStore, foldersStore, blobsStore], "readwrite", (tx) => {
       tx.objectStore(notesStore).clear();
