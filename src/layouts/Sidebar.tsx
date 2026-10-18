@@ -31,6 +31,7 @@ export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
   const setTab = useUiStore((s) => s.setSidebarTab);
   const resolvedScheme = useSettingsStore((s) => s.resolvedScheme);
   const toggleScheme = useSettingsStore((s) => s.toggleScheme);
+  const setThemeDialogOpen = useUiStore((s) => s.setThemeDialogOpen);
 
   // 移动端不展示大纲：即使共享状态停在大纲页签，也始终渲染文档树
   const activeTab = showOutline ? tab : "docs";
@@ -119,6 +120,16 @@ export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
           <span className="material-symbols-outlined">
             {resolvedScheme === "dark" ? "light_mode" : "dark_mode"}
           </span>
+        </button>
+        <button
+          type="button"
+          className="sidebar-theme-toggle"
+          data-testid="btn-theme-settings"
+          aria-label="打开主题设置"
+          title="主题设置"
+          onClick={() => setThemeDialogOpen(true)}
+        >
+          <span className="material-symbols-outlined">palette</span>
         </button>
       </footer>
     </>

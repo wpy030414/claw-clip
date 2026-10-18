@@ -7,6 +7,7 @@ import { M3eTheme } from "@/components/m3e";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useThemeSync } from "@/hooks/useThemeSync";
 import { useThemeTransition } from "@/hooks/useThemeTransition";
+import { CustomCss } from "./CustomCss";
 
 interface Props {
   children: ReactNode;
@@ -32,6 +33,7 @@ export function ThemeProvider({ children }: Props) {
       motion={motion}
     >
       {children}
+      <CustomCss />
     </M3eTheme>
   );
 }

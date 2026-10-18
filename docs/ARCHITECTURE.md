@@ -121,11 +121,14 @@ iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜
 `__APP_COMMIT__`，无 git 环境降级为 `unknown`。
 
 **侧栏底部 bar**：`Sidebar` 在内容下方渲染 `.sidebar-footer`：左侧 `SidebarStats` 统计胶囊
-（数据库图标 + 「共 x 个笔记 · xxx KB/MB/GB」），右侧 34px 方形明暗切换按钮。
+（数据库图标 + 「共 x 个笔记 · xxx KB/MB/GB」），右侧两枚 34px 方形按钮：明暗切换与主题设置。
+统计胶囊固定 `height: 34px` 与方形按钮同高，图标统一 18px。
 `SidebarStats` 订阅 `notesStore.revision`，400ms 防抖后调用 `data/stats.getDbStats()`：
 读取 notes/folders/blobs/meta 四个 store，文本记录按 JSON 的 UTF-8 字节数估算、blob 用其
 `size`。`revision` 在笔记/文件夹 CRUD、导入、重置后递增，保证统计随数据变化刷新。
-主题按钮读取 `settingsStore.resolvedScheme`，点击调用 `toggleScheme()`。
+明暗按钮读取 `settingsStore.resolvedScheme`，点击调用 `toggleScheme()`；主题设置按钮打开
+`features/theme/ThemeDialog`（`uiStore.themeDialogOpen`），编辑的自定义 CSS 写入
+`settingsStore.customCss` 并持久化到 localStorage。
 
 **笔记树行**：`NoteTree` 把「新建」行放进滚动容器作为首项，并用
 `position: sticky; top: 0` 吸顶（背景与面板一致，内容不会透出）。每条笔记行是两行结构：
@@ -156,6 +159,9 @@ settingsStore(scheme/seedColor…)
   ├─→ ThemeProvider <m3e-theme> 生成 --md-sys-color-* token（token 在 m3e-theme 元素上）
   └─→ useThemeSync：auto → resolvedScheme
         └─→ 预览代码高亮在 github / github-dark 主题间切换
+
+settingsStore.customCss
+  └─→ <CustomCss>：写入 <head> 的 <style>，用户自定义页面 CSS（空串 = 内置样式）
 ```
 
 - 编辑器语法高亮颜色全部走 `var(--md-sys-color-*)`，明暗自动跟随。
@@ -297,6 +303,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数          |
 | `src/utils/markdownFormat.ts`               | 整篇 Markdown 格式化（幂等、代码块保护）              |
 | `src/features/preview/themes.ts`            | 内置预览/导出排版 CSS                                 |
+| `src/features/theme/ThemeDialog.tsx`        | 主题设置：自定义页面 CSS 编辑与持久化                 |
 
 ## 10. 已知限制
 

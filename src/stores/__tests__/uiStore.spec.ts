@@ -47,6 +47,13 @@ describe("uiStore 基础 setter", () => {
     useUiStore.getState().setCommandPalette(true);
     expect(useUiStore.getState().commandPaletteOpen).toBe(true);
   });
+
+  it("setThemeDialogOpen", () => {
+    useUiStore.getState().setThemeDialogOpen(true);
+    expect(useUiStore.getState().themeDialogOpen).toBe(true);
+    useUiStore.getState().setThemeDialogOpen(false);
+    expect(useUiStore.getState().themeDialogOpen).toBe(false);
+  });
 });
 
 describe("uiStore 编辑器视图（会话内瞬态）", () => {

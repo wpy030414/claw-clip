@@ -53,6 +53,8 @@ interface UiState {
   commandPaletteOpen: boolean;
   /** 「存储空间」大 dialog 是否打开（从侧栏底部统计胶囊进入）。 */
   storageDialogOpen: boolean;
+  /** 「主题」dialog 是否打开（从侧栏底部主题按钮进入）。 */
+  themeDialogOpen: boolean;
   /** 桌面大纲侧栏开关。 */
   tocOpen: boolean;
   /**
@@ -69,6 +71,7 @@ interface UiState {
   setOutline: (items: OutlineItem[]) => void;
   setCommandPalette: (open: boolean) => void;
   setStorageDialogOpen: (open: boolean) => void;
+  setThemeDialogOpen: (open: boolean) => void;
   setViewMode: (mode: ViewMode | null) => void;
   toggleToc: () => void;
   setTocOpen: (open: boolean) => void;
@@ -84,6 +87,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   outline: [],
   commandPaletteOpen: false,
   storageDialogOpen: false,
+  themeDialogOpen: false,
   tocOpen: true,
   viewMode: null,
   confirmQueue: [],
@@ -95,6 +99,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setOutline: (items) => set({ outline: items }),
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
   setStorageDialogOpen: (open) => set({ storageDialogOpen: open }),
+  setThemeDialogOpen: (open) => set({ themeDialogOpen: open }),
   setViewMode: (mode) => set({ viewMode: mode }),
   toggleToc: () => set({ tocOpen: !get().tocOpen }),
   setTocOpen: (open) => set({ tocOpen: open }),

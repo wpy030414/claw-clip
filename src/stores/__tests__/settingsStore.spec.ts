@@ -21,6 +21,13 @@ describe("settingsStore.set", () => {
     useSettingsStore.getState().set("seedColor", "#00FF00");
     expect(useSettingsStore.getState().seedColor).toBe("#00FF00");
   });
+
+  it("set customCss（自定义页面 CSS）", () => {
+    useSettingsStore.getState().set("customCss", "body { background: red; }");
+    expect(useSettingsStore.getState().customCss).toBe("body { background: red; }");
+    useSettingsStore.getState().set("customCss", "");
+    expect(useSettingsStore.getState().customCss).toBe("");
+  });
 });
 
 describe("settingsStore.toggleScheme（明暗快捷切换）", () => {
@@ -66,5 +73,6 @@ describe("settingsStore persist（partialize 排除 resolvedScheme）", () => {
     const parsed = JSON.parse(raw!);
     expect(parsed.state.resolvedScheme).toBeUndefined(); // ★ 不持久化
     expect(parsed.state.scheme).toBeDefined(); // 但 scheme 持久化
+    expect(parsed.state.customCss).toBeDefined(); // 自定义 CSS 持久化
   });
 });

@@ -73,7 +73,8 @@ m3e-theme {
 .note-list-empty {
   padding: 32px 12px;
   text-align: center;
-  font-size: 0.88rem;
+  /* 空态字号统一：笔记列表 / 大纲 / 主内容区三处保持一致 */
+  font-size: 0.86rem;
   color: var(--md-sys-color-on-surface-variant, #49454f);
 }
 
@@ -88,7 +89,7 @@ m3e-theme {
   height: 100%;
   padding: 24px;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   color: var(--md-sys-color-on-surface-variant, #49454f);
   background: var(--md-sys-color-surface, #fffafc);
 }
@@ -889,7 +890,9 @@ m3e-theme {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 9px;
+  /* 与右侧主题按钮同高，底部 bar 两枚控件顶边对齐 */
+  height: 34px;
+  padding: 0 9px;
   border: none;
   border-radius: 10px;
   background: var(--md-sys-color-surface-container-high, #ece6f0);
@@ -916,7 +919,8 @@ m3e-theme {
 
 .sidebar-stats .material-symbols-outlined {
   flex-shrink: 0;
-  font-size: 14px;
+  /* 与右侧明暗/主题按钮的图标同尺寸 */
+  font-size: 18px;
   color: var(--md-sys-color-primary, #6750a4);
 }
 
@@ -937,7 +941,7 @@ m3e-theme {
   font-weight: 500;
 }
 
-/* 方形明暗切换：与统计胶囊同处一条底部 bar */
+/* 方形按钮：明暗切换 + 主题设置，与统计胶囊同处一条底部 bar */
 .sidebar-theme-toggle {
   flex-shrink: 0;
   width: 34px;
@@ -945,20 +949,18 @@ m3e-theme {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--md-sys-color-outline-variant, #cac4d0);
+  border: none;
   border-radius: 10px;
   background: var(--md-sys-color-surface-container-high, #ece6f0);
   color: var(--md-sys-color-on-surface-variant, #49454f);
   cursor: pointer;
   transition:
     background-color 120ms ease,
-    border-color 120ms ease,
     color 120ms ease;
 }
 
 .sidebar-theme-toggle:hover {
   background: var(--md-sys-color-surface-container-highest, #e6e0e9);
-  border-color: var(--md-sys-color-outline, #79747e);
   color: var(--md-sys-color-on-surface, #1d1b20);
 }
 
@@ -1020,7 +1022,7 @@ m3e-theme {
 .outline-empty {
   padding: 28px 16px;
   text-align: center;
-  font-size: 0.84rem;
+  font-size: 0.86rem;
   color: var(--md-sys-color-on-surface-variant, #49454f);
 }
 

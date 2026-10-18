@@ -18,6 +18,8 @@ export interface Settings {
   motion: Motion;
   /** 编辑器字号 px。 */
   fontSize: number;
+  /** 自定义页面 CSS：注入 <head> 的 <style>，空串表示使用内置样式。 */
+  customCss: string;
 }
 
 /** 默认设置。seedColor = #FFAACC（桃粉，对齐旧 Element Plus primary=pink）。 */
@@ -28,4 +30,5 @@ export const DEFAULT_SETTINGS: Settings = {
   density: 0,
   motion: "expressive",
   fontSize: 16,
+  customCss: "",
 };

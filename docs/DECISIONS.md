@@ -1331,3 +1331,20 @@ E2E 覆盖「上传期间进度浮层可见且 Esc 无法关闭」「全部上�
 **后果**：`vite.config.ts` / `vitest.config.ts` 从 `vite-plus` 导入 `defineConfig`；单测从 `vite-plus/test` 导入断言 API；`pnpm-workspace.yaml` 增加 `catalog`、`overrides` 与 `peerDependencyRules` 来对齐 vite/vitest。`vp check --fix` 对全仓做了一次格式化，产生一次性格式 diff。E2E 的 baseURL 改为读取同一个 `PAGES_BASE_PATH`。
 
 **验证**：`vp check` 全绿（138 文件格式 + 122 文件 lint）；`vp test run` 27 文件 / 299 例通过；`pnpm run build` 成功且 `dist/` 含 `index.html`、`assets/`、`.nojekyll`、`404.html`；无环境变量时资源前缀为 `/`，`PAGES_BASE_PATH=/claw-clip/` 时变为 `/claw-clip/`。
+
+## ADR-051 · 主题设置：侧栏入口 + 自定义页面 CSS ✅
+
+**背景**：侧栏底部只有一枚明暗切换按钮，用户想调整页面视觉（例如改主色、正文宽度、某个组件的间距）时没有入口；M3E token 与内置样式全部编译在产物里，改一行都得重新构建。
+
+**决策**：
+
+- 在明暗切换右侧新增「主题设置」方形按钮（`palette`），打开 `ThemeDialog`；底部 bar 的统计胶囊与按钮统一 34px 高，统计图标从 14px 提到 18px，与明暗/主题图标同尺寸。
+- `settings.customCss` 保存用户 CSS，`<CustomCss>` 在 `<head>` 内维护一个 `<style data-clawclip-custom-css>`，用 `textContent` 写入（避免 `</style>` 截断），随输入即时生效。
+- 自定义 CSS 保存在 localStorage（`claw-clip-settings`），与主题偏好同一份持久化白名单；「恢复默认」清空。
+- 不做语法校验/作用域隔离：这是用户对自己本机页面的样式覆盖，写坏后清空即可恢复。
+
+**理由**：自定义 CSS 是成本最低、覆盖面最大的主题扩展方式，不需要为每个视觉项做一套设置 UI；同时保留 M3E token 作为默认层，`m3e-theme { --md-sys-color-*: … }` 即可覆盖主题色。把入口放在侧栏底部与明暗切换并列，符合「主题相关操作集中在一处」的直觉。
+
+**后果**：`ThemeDialog` 挂在 `AppShell`，与 `StorageDialog` 一样不受侧栏收起/断点切换影响；自定义 CSS 只作用于 light DOM（不进入 M3E 组件 shadow DOM 内部），需要深改组件内部时应改内置样式。刷新后样式在 React 挂载时生效，首次绘制前可能有一瞬默认样式。
+
+**验证**：`settingsStore.spec.ts` 覆盖 `customCss` 读写与持久化白名单；`uiStore.spec.ts` 覆盖 dialog 开关；E2E 覆盖「统计胶囊与两枚按钮等高、图标 18px」「写入 CSS 后计算样式立即生效」「刷新后仍生效」「恢复默认清空」。

@@ -27,7 +27,7 @@ test("S5 桌面：页签 + 行级新建 + 笔记树", async ({ page }) => {
   const stats = page.getByTestId("sidebar-stats");
   await expect(stats).toContainText("共 0 个笔记", { timeout: 5_000 });
 
-  // 底部 bar：统计 + 方形明暗切换
+  // 底部 bar：统计 + 方形明暗切换 + 主题设置
   await expect(page.getByTestId("sidebar-footer")).toBeVisible();
   const themeToggle = page.getByTestId("btn-theme-toggle");
   await expect(themeToggle).toBeVisible();
@@ -64,6 +64,63 @@ test("S5 桌面：页签 + 行级新建 + 笔记树", async ({ page }) => {
   await expect(page.locator("[data-testid^='note-link-']")).toHaveCount(1);
   await expect(stats).toContainText("共 1 个笔记", { timeout: 5_000 });
   await expect(stats).toContainText(/[\d.]+ (KB|MB|GB)/);
+});
+
+test("S5 桌面：底部 bar 等高 + 主题设置自定义 CSS", async ({ page }) => {
+  await page.goto("");
+
+  const stats = page.getByTestId("sidebar-stats");
+  const toggle = page.getByTestId("btn-theme-toggle");
+  const settings = page.getByTestId("btn-theme-settings");
+  await expect(stats).toBeVisible();
+  await expect(settings).toBeVisible();
+
+  // 统计胶囊与两枚方形按钮同高；统计图标与主题图标同尺寸
+  const [statsBox, toggleBox, settingsBox] = await Promise.all([
+    stats.boundingBox(),
+    toggle.boundingBox(),
+    settings.boundingBox(),
+  ]);
+  expect(statsBox && toggleBox && settingsBox).toBeTruthy();
+  expect(Math.abs(statsBox!.height - toggleBox!.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(settingsBox!.height - toggleBox!.height)).toBeLessThanOrEqual(1);
+  await expect(stats.locator(".material-symbols-outlined")).toHaveCSS("font-size", "18px");
+  await expect(toggle.locator(".material-symbols-outlined")).toHaveCSS("font-size", "18px");
+
+  // 打开主题 dialog，写入的自定义 CSS 立即注入到页面
+  await settings.click();
+  const input = page.getByTestId("theme-css-input");
+  await expect(input).toBeVisible();
+  await input.fill("html { --clawclip-e2e: 42; }");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue("--clawclip-e2e").trim(),
+      ),
+    )
+    .toBe("42");
+
+  // 持久化：刷新后仍然生效
+  await page.reload();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue("--clawclip-e2e").trim(),
+      ),
+    )
+    .toBe("42");
+
+  // 恢复默认：自定义样式被移除
+  await page.getByTestId("btn-theme-settings").click();
+  await expect(input).toHaveValue("html { --clawclip-e2e: 42; }");
+  await page.getByTestId("theme-css-reset").click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue("--clawclip-e2e").trim(),
+      ),
+    )
+    .toBe("");
 });
 
 test("S5 移动：笔记树 → 全屏编辑器 → 返回树", async ({ page }) => {
