@@ -1,7 +1,7 @@
 /**
  * 云快照组装单测：图片转图床、失败回退、缓存复用与超限剔除。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { BLOB_URL_SCHEME, setBlobRemoteUrl } from "@/data/blobStore";
 import { CloudSyncError } from "@/data/cloudSync";
 import { LocalDataSource } from "@/data/local";
@@ -130,8 +130,14 @@ describe("buildCloudSnapshot", () => {
   });
 
   it("超限时从最大的非图片附件开始剔除，正文引用保留", async () => {
-    const big = await ds.saveAttachment("note-snapshot", makeBlob("a".repeat(900), "application/octet-stream"));
-    const small = await ds.saveAttachment("note-snapshot", makeBlob("b".repeat(600), "application/octet-stream"));
+    const big = await ds.saveAttachment(
+      "note-snapshot",
+      makeBlob("a".repeat(900), "application/octet-stream"),
+    );
+    const small = await ds.saveAttachment(
+      "note-snapshot",
+      makeBlob("b".repeat(600), "application/octet-stream"),
+    );
     await ds.upsertNote(
       makeNote({
         id: "note-snapshot",

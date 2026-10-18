@@ -19,9 +19,7 @@ export function DesktopLayout() {
           title={open ? "收起侧栏" : "展开侧栏"}
           onClick={() => setOpen(!open)}
         >
-          <span className="material-symbols-outlined">
-            {open ? "menu_open" : "menu"}
-          </span>
+          <span className="material-symbols-outlined">{open ? "menu_open" : "menu"}</span>
         </button>
         <Outlet />
       </main>

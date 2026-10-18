@@ -1,7 +1,7 @@
 /**
  * 图床客户端单测：请求形状、错误映射、20MB 限制与本地回退。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { BLOB_URL_SCHEME, getBlob } from "@/data/blobStore";
 import {
   IMAGE_HOST_MAX_BYTES,

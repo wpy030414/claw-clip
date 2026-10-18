@@ -98,9 +98,7 @@ function errorFromResponse(res: Response, context: "api" | "gist"): CloudSyncErr
     if (res.headers.get("x-ratelimit-remaining") === "0") {
       const reset = Number(res.headers.get("x-ratelimit-reset"));
       const when =
-        Number.isFinite(reset) && reset > 0
-          ? new Date(reset * 1000).toLocaleTimeString()
-          : "稍后";
+        Number.isFinite(reset) && reset > 0 ? new Date(reset * 1000).toLocaleTimeString() : "稍后";
       return new CloudSyncError("rate_limit", `GitHub API 限流，请 ${when} 后重试`);
     }
     return new CloudSyncError("forbidden", "令牌权限不足（需要 gist 权限）");
@@ -158,7 +156,10 @@ async function request<T>(
     } catch (error) {
       if (error instanceof CloudSyncError) throw error;
       const aborted = (error as Error | undefined)?.name === "AbortError";
-      lastError = new CloudSyncError(aborted ? "timeout" : "network", aborted ? "请求超时" : "网络异常，请检查连接");
+      lastError = new CloudSyncError(
+        aborted ? "timeout" : "network",
+        aborted ? "请求超时" : "网络异常，请检查连接",
+      );
       if (attempt === 0 && retryGet) continue;
       throw lastError;
     } finally {
@@ -199,7 +200,10 @@ export async function validateGistToken(token: string): Promise<GistUser> {
   try {
     await request<unknown>("/gists?per_page=1", { token: trimmed });
   } catch (error) {
-    if (error instanceof CloudSyncError && (error.code === "forbidden" || error.code === "not_found")) {
+    if (
+      error instanceof CloudSyncError &&
+      (error.code === "forbidden" || error.code === "not_found")
+    ) {
       throw new CloudSyncError("forbidden", "令牌缺少 gist 权限");
     }
     throw error;
@@ -278,7 +282,10 @@ async function fetchRaw(url: string): Promise<string> {
   } catch (error) {
     if (error instanceof CloudSyncError) throw error;
     const aborted = (error as Error | undefined)?.name === "AbortError";
-    throw new CloudSyncError(aborted ? "timeout" : "network", aborted ? "下载快照超时" : "下载快照失败");
+    throw new CloudSyncError(
+      aborted ? "timeout" : "network",
+      aborted ? "下载快照超时" : "下载快照失败",
+    );
   } finally {
     guard.done();
   }

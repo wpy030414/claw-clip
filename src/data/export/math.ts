@@ -23,9 +23,7 @@ export async function loadMathApi(): Promise<MathApi> {
 
 /** 取 KaTeX 节点里的原始 TeX（错误节点可能没有）。 */
 export function katexTex(el: Element): string | null {
-  const tex = el
-    .querySelector('annotation[encoding="application/x-tex"]')
-    ?.textContent?.trim();
+  const tex = el.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
   return tex || null;
 }
 

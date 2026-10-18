@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { resolveOutlineTarget } from "@/utils/outline";
 
 const shown = [
@@ -27,9 +27,7 @@ describe("resolveOutlineTarget", () => {
   });
 
   it("标题文字刚被改过：同序号且同级别时仍按原位跳", () => {
-    const fresh = shown.map((h, i) =>
-      i === 1 ? { ...h, text: "改过的二级标题" } : h,
-    );
+    const fresh = shown.map((h, i) => (i === 1 ? { ...h, text: "改过的二级标题" } : h));
     const resolved = resolveOutlineTarget(fresh, shown[1], 1);
     expect(resolved?.target.text).toBe("改过的二级标题");
     expect(resolved?.index).toBe(1);

@@ -1,9 +1,8 @@
-name: Deploy React site to Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: ["main"]
-
   workflow_dispatch:
 
 permissions:
@@ -20,40 +19,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: actions/checkout@v7
+
+      # setup-vp 一并处理 Node、包管理器和依赖安装；
+      # Node 版本读 .nvmrc（与本地 nvm/fnm 同一份），不要再写 setup-node / pnpm install
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
-          version: 12
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "pnpm"
-      - name: Install dependencies
-        # frozen-lockfile 走 pnpm-lock.yaml 可复现
-        run: pnpm install --frozen-lockfile
-      - name: Type check
-        run: pnpm run type-check
+          node-version-file: .nvmrc
+          cache: true
+
+      - name: Check
+        run: vp check
+
       - name: Unit tests
-        run: pnpm run test:unit
-      - name: Build the project
-        # build 内含 tsc -b + vite build
-        run: |
-          pnpm run build
-          cp ./dist/index.html ./dist/404.html
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@main
+        run: vp test run
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: pnpm run test:e2e
+
+      # base 只在这里注入，代码里不做推断：
+      #   项目页：变量未设置 → /<repo>/
+      #   自定义域 / 用户页：把仓库变量 PAGES_BASE_PATH 设为 /
+      - name: Build
+        run: pnpm run build
+        env:
+          PAGES_BASE_PATH: ${{ vars.PAGES_BASE_PATH || format('/{0}/', github.event.repository.name) }}
+
+      - name: Disable Jekyll
+        run: touch dist/.nojekyll
+
+      - uses: actions/configure-pages@v6
         with:
-          path: ./dist
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+          # v4+ 默认排除点文件；不加这行 .nojekyll 进不了 artifact
+          include-hidden-files: true
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -74,7 +74,10 @@ function toggleInline(
 ): CommandResult {
   const len = marker.length;
   const wrappedOutside =
-    from >= len && to + len <= doc.length && doc.slice(from - len, from) === marker && doc.slice(to, to + len) === marker;
+    from >= len &&
+    to + len <= doc.length &&
+    doc.slice(from - len, from) === marker &&
+    doc.slice(to, to + len) === marker;
 
   if (wrappedOutside) {
     return {
@@ -215,12 +218,7 @@ export function buildCommand(
     case "image":
       return insertBlock(doc, from, to, "![图片描述](https://)");
     case "table":
-      return insertBlock(
-        doc,
-        from,
-        to,
-        "| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |",
-      );
+      return insertBlock(doc, from, to, "| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |");
     case "hr":
       return insertBlock(doc, from, to, "---");
     case "codeBlock": {

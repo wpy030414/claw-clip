@@ -60,8 +60,7 @@ export function openDB(): Promise<IDBDatabase> {
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
-      req.onblocked = () =>
-        reject(new Error("IndexedDB 打开被阻塞：存在其它未关闭的旧版本连接"));
+      req.onblocked = () => reject(new Error("IndexedDB 打开被阻塞：存在其它未关闭的旧版本连接"));
     });
   }
   return dbPromise;

@@ -1,7 +1,7 @@
 /**
  * taskProgressStore 单测：单任务互斥、更新与结束。
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { useTaskProgressStore } from "@/stores/taskProgressStore";
 
 beforeEach(() => {
@@ -22,7 +22,11 @@ describe("taskProgressStore", () => {
   it("只接受当前任务的更新与结束", () => {
     const id = useTaskProgressStore.getState().begin("正在迁移")!;
     useTaskProgressStore.getState().update(id, { done: 2, total: 5, detail: "a.png" });
-    expect(useTaskProgressStore.getState().task).toMatchObject({ done: 2, total: 5, detail: "a.png" });
+    expect(useTaskProgressStore.getState().task).toMatchObject({
+      done: 2,
+      total: 5,
+      detail: "a.png",
+    });
 
     useTaskProgressStore.getState().update(id + 999, { done: 4 });
     expect(useTaskProgressStore.getState().task!.done).toBe(2);

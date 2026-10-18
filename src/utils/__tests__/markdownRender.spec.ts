@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { extractOutline, renderMarkdown } from "@/utils/markdownRender";
 
 describe("renderMarkdown 扩展语法", () => {
@@ -47,7 +47,9 @@ describe("renderMarkdown 扩展语法", () => {
   });
 
   it("手写 HTML 原样保留（不做 XSS 过滤）", () => {
-    const html = renderMarkdown('<div class="raw">手写内容</div>\n\n<img src="x" onerror="alert(1)">');
+    const html = renderMarkdown(
+      '<div class="raw">手写内容</div>\n\n<img src="x" onerror="alert(1)">',
+    );
     expect(html).toContain('<div class="raw">手写内容</div>');
     expect(html).toContain('onerror="alert(1)"');
   });

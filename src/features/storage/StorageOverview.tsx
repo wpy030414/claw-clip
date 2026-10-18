@@ -144,7 +144,6 @@ export function StorageOverview({ open }: { open: boolean }) {
           ) : (
             <p className="storage-hint">浏览器未提供配额信息（不影响本地使用）。</p>
           )}
-
         </div>
       </section>
 

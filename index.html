@@ -2,10 +2,15 @@
 <html lang="zh">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>鲨鱼夹 | ClawClip</title>
-    <!-- 自托管字体在 S1 后续补入 public/fonts；此处先不引公网，避免离线失效 -->
+    <meta
+      name="description"
+      content="鲨鱼夹 ClawClip —— 本地优先的 Markdown 笔记工作站：文件夹树、扩展语法、实时预览、MD/DOCX/PDF 互导，数据全部保存在浏览器本地。"
+    />
+    <!-- 必须用 %BASE_URL%，否则部署到子路径后图标 404 -->
+    <link rel="icon" href="%BASE_URL%favicon.ico" />
+    <!-- 自托管字体在 src/assets/fonts，由 CSS 相对路径引用，随构建自动加 base 前缀 -->
   </head>
   <body>
     <div id="root"></div>

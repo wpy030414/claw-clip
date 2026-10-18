@@ -1,7 +1,7 @@
 /**
  * integrationStore 单测：默认值、PAT 记忆开关与持久化白名单。
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { useIntegrationStore } from "@/stores/integrationStore";
 
 const DEFAULTS = {

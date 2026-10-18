@@ -96,7 +96,12 @@ export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
       )}
 
       {/* 页签内容：key 变化触发一次淡入 + 轻微位移，切换时不再硬切 */}
-      <div className="sidebar-panel" data-testid="sidebar-panel" data-tab={activeTab} key={activeTab}>
+      <div
+        className="sidebar-panel"
+        data-testid="sidebar-panel"
+        data-tab={activeTab}
+        key={activeTab}
+      >
         {activeTab === "outline" ? <OutlinePane /> : <NoteTree />}
       </div>
 

@@ -1,7 +1,7 @@
 /**
  * 网络速度计单测：滑动窗口、样本不足与长时间无数据衰减。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { SpeedMeter } from "@/utils/speed";
 
 describe("SpeedMeter", () => {

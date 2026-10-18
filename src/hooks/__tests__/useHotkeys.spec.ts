@@ -2,7 +2,7 @@
  * useHotkeys 单测：组合键规范化 + 全局拦截。
  * 纯 window keydown 逻辑，不涉及 M3E/编辑器渲染。
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vite-plus/test";
 import { renderHook } from "@testing-library/react";
 import { useHotkeys, normalizeCombo } from "@/hooks/useHotkeys";
 
@@ -89,7 +89,12 @@ describe("useHotkeys", () => {
   it("handlers 更新后读最新闭包（ref 存最新，不过时）", () => {
     let count = 0;
     const { rerender } = renderHook(
-      ({ n }) => useHotkeys({ "mod+s": () => { count = n; } }),
+      ({ n }) =>
+        useHotkeys({
+          "mod+s": () => {
+            count = n;
+          },
+        }),
       { initialProps: { n: 1 } },
     );
     rerender({ n: 2 }); // 更新 handler

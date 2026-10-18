@@ -44,7 +44,9 @@ test("编辑器显示行号", async ({ page }) => {
 
   // 行号必须与正文首行同高（不能再被额外的 gutter padding 顶下去）
   const offset = await page.evaluate(() => {
-    const line = document.querySelector('[data-testid="md-editor"] .cm-line')!.getBoundingClientRect();
+    const line = document
+      .querySelector('[data-testid="md-editor"] .cm-line')!
+      .getBoundingClientRect();
     const first = Array.from(
       document.querySelectorAll('[data-testid="md-editor"] .cm-lineNumbers .cm-gutterElement'),
     ).find((el) => getComputedStyle(el).visibility !== "hidden")!;
@@ -152,7 +154,9 @@ test("选中文字直接敲 Markdown 标记：包裹选区而不是替换", asyn
   // 敲 * → `*hello*`，且内文仍处于选中态
   await page.keyboard.press("*");
   await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("*hello*");
-  await expect.poll(async () => page.evaluate(() => window.getSelection()?.toString())).toBe("hello");
+  await expect
+    .poll(async () => page.evaluate(() => window.getSelection()?.toString()))
+    .toBe("hello");
 
   // 再敲一次 * → 自然升级为加粗
   await page.keyboard.press("*");
@@ -256,13 +260,13 @@ test("中文输入法插入标记：全角字符也按 Markdown 语法包裹选�
   await page.keyboard.press("ControlOrMeta+A");
 
   // 模拟中文标点模式的输入法：直接把全角「＊」插进文档（keydown 被 IME 吃掉）
-  const inserted = await page.evaluate(() =>
-    document.execCommand("insertText", false, "＊"),
-  );
+  const inserted = await page.evaluate(() => document.execCommand("insertText", false, "＊"));
   expect(inserted).toBe(true);
 
   await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("*hello*");
-  await expect.poll(async () => page.evaluate(() => window.getSelection()?.toString())).toBe("hello");
+  await expect
+    .poll(async () => page.evaluate(() => window.getSelection()?.toString()))
+    .toBe("hello");
   // 落进文档的是半角标记，不是全角字符
   expect(await editor.innerText()).not.toContain("＊");
 
@@ -327,9 +331,7 @@ test("警报框：> [!WARNING] 渲染为带标题的提示块", async ({ page })
 
 test("导出 HTML：编辑模式下按需渲染并生成独立文档", async ({ page }) => {
   await newNote(page);
-  await page.keyboard.insertText(
-    "# 导出的标题\n\n正文段落\n\n```mermaid\ngraph TD;\nA-->B;\n```",
-  );
+  await page.keyboard.insertText("# 导出的标题\n\n正文段落\n\n```mermaid\ngraph TD;\nA-->B;\n```");
 
   // 切到仅编辑：此时没有可见预览，导出仍必须拿到渲染结果
   await page.getByTestId("btn-view-edit").click();
@@ -391,9 +393,9 @@ test("行号：折行时与首行对齐，而不是整块居中", async ({ page 
   await page.waitForTimeout(300);
 
   const result = await page.evaluate(() => {
-    const nums = Array.from(
-      document.querySelectorAll(".cm-lineNumbers .cm-gutterElement"),
-    ).filter((el) => getComputedStyle(el).visibility !== "hidden");
+    const nums = Array.from(document.querySelectorAll(".cm-lineNumbers .cm-gutterElement")).filter(
+      (el) => getComputedStyle(el).visibility !== "hidden",
+    );
     const gutter = nums[0];
     const gutterRange = document.createRange();
     gutterRange.selectNodeContents(gutter);
@@ -419,28 +421,19 @@ test("行号：折行时与首行对齐，而不是整块居中", async ({ page 
 
 test("更多菜单：格式化位于第一项并强制校准 Markdown 格式", async ({ page }) => {
   await newNote(page);
-  await page.keyboard.insertText(
-    "#标题\n\n\n\n*   甲\n+ 乙\n- [X]   任务\n>>   引用\n\n正文   ",
-  );
+  await page.keyboard.insertText("#标题\n\n\n\n*   甲\n+ 乙\n- [X]   任务\n>>   引用\n\n正文   ");
 
   await page.getByTestId("btn-menu").click();
   const menu = page.getByTestId("editor-menu");
-  await expect(menu.getByRole("menuitem").first()).toHaveAttribute(
-    "data-testid",
-    "menu-format",
-  );
+  await expect(menu.getByRole("menuitem").first()).toHaveAttribute("data-testid", "menu-format");
   await page.getByTestId("menu-format").click();
 
   const editor = page.locator(EDITOR).first();
   await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("# 标题");
   await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("- 甲");
   await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("- 乙");
-  await expect
-    .poll(async () => editor.innerText(), { timeout: 5_000 })
-    .toContain("- [x] 任务");
-  await expect
-    .poll(async () => editor.innerText(), { timeout: 5_000 })
-    .toContain("> > 引用");
+  await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("- [x] 任务");
+  await expect.poll(async () => editor.innerText(), { timeout: 5_000 }).toContain("> > 引用");
 
   // 预览与编辑器同源：格式化后的标题/列表立即生效
   await expect(page.getByTestId("md-preview").locator("h1").first()).toHaveText("标题");

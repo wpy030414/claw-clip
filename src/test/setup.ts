@@ -11,7 +11,7 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { Blob as NodeBlob, File as NodeFile } from "node:buffer";
-import { afterEach, vi } from "vitest";
+import { afterEach, vi } from "vite-plus/test";
 import { __resetDbSingleton } from "@/data/db";
 import { releaseBlobUrls } from "@/data/blobStore";
 

@@ -41,11 +41,7 @@ import { countWords } from "@/utils/markdown";
 import { formatMarkdown } from "@/utils/markdownFormat";
 import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
 import { SpeedMeter } from "@/utils/speed";
-import {
-  setActiveEditor,
-  setOutlineNavigator,
-  type OutlineJumpTarget,
-} from "./activeEditor";
+import { setActiveEditor, setOutlineNavigator, type OutlineJumpTarget } from "./activeEditor";
 import "@/features/editor/editor.css";
 
 interface Props {
@@ -271,7 +267,10 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
       const taskId = willUpload
         ? useTaskProgressStore
             .getState()
-            .begin(files.length > 1 ? `正在上传 ${files.length} 个文件` : "正在上传图片", files.length)
+            .begin(
+              files.length > 1 ? `正在上传 ${files.length} 个文件` : "正在上传图片",
+              files.length,
+            )
         : null;
       if (willUpload && taskId === null) {
         toastWarning("已有图片任务正在进行，请稍后再试");
@@ -301,8 +300,10 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
           } else if (result.error) {
             toastWarning(`图床上传失败，已保存到本地：${result.error}`, 6000);
           }
-          const alt = (file.name || (isImage ? "图片" : "附件")).replace(/[\[\]\r\n]/g, " ").trim();
-          const md = isImage ? `![${alt || "图片"}](${result.target})` : `[${alt || "附件"}](${result.target})`;
+          const alt = (file.name || (isImage ? "图片" : "附件")).replace(/[[\]\r\n]/g, " ").trim();
+          const md = isImage
+            ? `![${alt || "图片"}](${result.target})`
+            : `[${alt || "附件"}](${result.target})`;
           editorRef.current?.insertText(`\n${md}\n`);
           index += 1;
           if (taskId !== null) {
@@ -491,16 +492,36 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
                 </button>
                 <div className="editor-menu-sep" />
                 <div className="editor-menu-label">导出</div>
-                <button type="button" role="menuitem" data-testid="menu-export-md" onClick={() => void handleExport("md")}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-export-md"
+                  onClick={() => void handleExport("md")}
+                >
                   <span className="material-symbols-outlined">description</span> Markdown (.md)
                 </button>
-                <button type="button" role="menuitem" data-testid="menu-export-html" onClick={() => void handleExport("html")}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-export-html"
+                  onClick={() => void handleExport("html")}
+                >
                   <span className="material-symbols-outlined">web</span> HTML (.html)
                 </button>
-                <button type="button" role="menuitem" data-testid="menu-export-docx" onClick={() => void handleExport("docx")}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-export-docx"
+                  onClick={() => void handleExport("docx")}
+                >
                   <span className="material-symbols-outlined">article</span> Word (.docx)
                 </button>
-                <button type="button" role="menuitem" data-testid="menu-export-pdf" onClick={() => void handleExport("pdf")}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-export-pdf"
+                  onClick={() => void handleExport("pdf")}
+                >
                   <span className="material-symbols-outlined">picture_as_pdf</span> PDF (.pdf)
                 </button>
                 <div className="editor-menu-sep" />
@@ -601,7 +622,6 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
           </div>
         </div>
       </M3eDialog>
-
     </div>
   );
 }

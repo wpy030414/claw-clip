@@ -52,8 +52,9 @@ export async function buildHtmlDocument(
   previewCss: string,
   { print = false }: BuildHtmlOptions = {},
 ): Promise<string> {
-  const safeTitle = title.replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
+  const safeTitle = title.replace(
+    /[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
   );
 
   const tokenStyles = `<style>

@@ -106,17 +106,13 @@ export async function getStorageReport(): Promise<StorageReport> {
   // 单只读事务读四张表，保证四份数据来自同一时刻
   const [noteRows, folderRows, blobRows, metaRows] = await withTx<
     [Note[], Folder[], BlobRecord[], Record<string, unknown>[]]
-  >(
-    [notes, folders, blobs, meta],
-    "readonly",
-    async (tx) => {
-      const noteRows = await idbReq<Note[]>(tx.objectStore(notes).getAll());
-      const folderRows = await idbReq<Folder[]>(tx.objectStore(folders).getAll());
-      const blobRows = await idbReq<BlobRecord[]>(tx.objectStore(blobs).getAll());
-      const metaRows = await idbReq<Record<string, unknown>[]>(tx.objectStore(meta).getAll());
-      return [noteRows, folderRows, blobRows, metaRows] as const;
-    },
-  );
+  >([notes, folders, blobs, meta], "readonly", async (tx) => {
+    const noteRows = await idbReq<Note[]>(tx.objectStore(notes).getAll());
+    const folderRows = await idbReq<Folder[]>(tx.objectStore(folders).getAll());
+    const blobRows = await idbReq<BlobRecord[]>(tx.objectStore(blobs).getAll());
+    const metaRows = await idbReq<Record<string, unknown>[]>(tx.objectStore(meta).getAll());
+    return [noteRows, folderRows, blobRows, metaRows] as const;
+  });
 
   const blobById = new Map(blobRows.map((b) => [b.id, b]));
 
@@ -181,9 +177,7 @@ export async function getStorageReport(): Promise<StorageReport> {
   const blobBytes = blobRows.reduce((sum, blob) => sum + blobSize(blob) + blobMetaBytes(blob), 0);
   const metaBytes = metaRows.reduce((sum, record) => sum + jsonBytes(record), 0);
   const binaryBytes = blobRows.reduce((sum, blob) => sum + blobSize(blob), 0);
-  const orphanBytes = attachmentRanking
-    .filter((a) => a.orphan)
-    .reduce((sum, a) => sum + a.size, 0);
+  const orphanBytes = attachmentRanking.filter((a) => a.orphan).reduce((sum, a) => sum + a.size, 0);
 
   return {
     capturedAt: Date.now(),
@@ -223,11 +217,11 @@ export async function getQuotaInfo(): Promise<QuotaInfo> {
       storage.estimate(),
       typeof storage.persisted === "function" ? storage.persisted() : Promise.resolve(false),
     ]);
-    const quota = Number.isFinite(estimate.quota) && (estimate.quota ?? 0) > 0 ? estimate.quota! : null;
+    const quota =
+      Number.isFinite(estimate.quota) && (estimate.quota ?? 0) > 0 ? estimate.quota! : null;
     const usage = Number.isFinite(estimate.usage) ? estimate.usage! : null;
-    const usageDetails = (
-      estimate as StorageEstimate & { usageDetails?: { indexedDB?: number } }
-    ).usageDetails;
+    const usageDetails = (estimate as StorageEstimate & { usageDetails?: { indexedDB?: number } })
+      .usageDetails;
     return {
       supported: quota !== null,
       usage,

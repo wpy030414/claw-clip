@@ -34,8 +34,7 @@ export async function printHtmlDocument(html: string): Promise<void> {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   // 保持桌面宽度，避免 0 宽触发移动端断点；放到视口外不影响当前页面
-  iframe.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;";
+  iframe.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;";
   document.body.appendChild(iframe);
 
   const cleanup = () => {
@@ -53,9 +52,7 @@ export async function printHtmlDocument(html: string): Promise<void> {
 
     // 字体与图片就绪后再打印，避免首屏空白/图表缺失
     if (doc.fonts?.ready) await doc.fonts.ready.catch(() => undefined);
-    await Promise.all(
-      Array.from(doc.images).map((img) => img.decode().catch(() => undefined)),
-    );
+    await Promise.all(Array.from(doc.images).map((img) => img.decode().catch(() => undefined)));
 
     window.dispatchEvent(new CustomEvent("clawclip:pdf-print"));
     win.focus();

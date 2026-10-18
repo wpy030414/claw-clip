@@ -4,7 +4,7 @@
  * ★ 重点：upsertNote 原地更新（同 id 覆盖）——回归旧「编辑=删旧建新」bug。
  * db.ts 单例重置已由 test/setup.ts 的 afterEach(__resetDbSingleton) 处理。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { LocalDataSource } from "@/data/local";
 import { BLOB_URL_SCHEME } from "@/data/blobStore";
 import { makeNote, makeBlob } from "@/test/factories";
@@ -206,11 +206,12 @@ describe("LocalDataSource.exportAll / importAll（备份往返）", () => {
 
     // 构造含非 ASCII 字节的二进制
     const bytes = new Uint8Array([0x00, 0xff, 0x80, 0x7f, 0xc3, 0xa9, 0x01, 0xfe]);
-    const blobId = await ds.saveAttachment("bin1", new Blob([bytes], { type: "application/octet-stream" }));
-    // 附件必须被正文引用，否则导入后的 reconcile 会把它当孤儿回收
-    await ds.upsertNote(
-      makeNote({ id: "bin1", content: `![](${BLOB_URL_SCHEME}${blobId})` }),
+    const blobId = await ds.saveAttachment(
+      "bin1",
+      new Blob([bytes], { type: "application/octet-stream" }),
     );
+    // 附件必须被正文引用，否则导入后的 reconcile 会把它当孤儿回收
+    await ds.upsertNote(makeNote({ id: "bin1", content: `![](${BLOB_URL_SCHEME}${blobId})` }));
 
     const payload = await ds.exportAll();
     await ds.clear();
@@ -238,9 +239,27 @@ describe("LocalDataSource 文件夹（v2）", () => {
   });
 
   it("删除文件夹级联删除子孙文件夹与其下笔记", async () => {
-    await ds.upsertFolder({ id: "f-root", name: "项目", parentId: null, createdAt: 1, updatedAt: 1 });
-    await ds.upsertFolder({ id: "f-child", name: "子项", parentId: "f-root", createdAt: 1, updatedAt: 1 });
-    await ds.upsertFolder({ id: "f-other", name: "无关", parentId: null, createdAt: 1, updatedAt: 1 });
+    await ds.upsertFolder({
+      id: "f-root",
+      name: "项目",
+      parentId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ds.upsertFolder({
+      id: "f-child",
+      name: "子项",
+      parentId: "f-root",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ds.upsertFolder({
+      id: "f-other",
+      name: "无关",
+      parentId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
     await ds.upsertNote(makeNote({ id: "n-in", folderId: "f-child" }));
     await ds.upsertNote(makeNote({ id: "n-out", folderId: "f-other" }));
 
@@ -264,7 +283,13 @@ describe("LocalDataSource 文件夹（v2）", () => {
 describe("LocalDataSource.replaceAll / mergeAll", () => {
   it("replaceAll 原子替换三张表，并保留 meta", async () => {
     await ds.upsertNote(makeNote({ id: "old-note", title: "旧笔记" }));
-    await ds.upsertFolder({ id: "old-folder", name: "旧文件夹", parentId: null, createdAt: 1, updatedAt: 1 });
+    await ds.upsertFolder({
+      id: "old-folder",
+      name: "旧文件夹",
+      parentId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
     await withTx(globalConfig.storeNames.meta, "readwrite", (tx) =>
       idbReq(tx.objectStore(globalConfig.storeNames.meta).put({ key: "marker", value: 42 })),
     );
@@ -273,7 +298,9 @@ describe("LocalDataSource.replaceAll / mergeAll", () => {
     const payload: BackupPayload = {
       schemaVersion: 2,
       exportedAt: 1,
-      notes: [makeNote({ id: "new-note", title: "新笔记", content: `![x](clawclip://blob/${blobId})` })],
+      notes: [
+        makeNote({ id: "new-note", title: "新笔记", content: `![x](clawclip://blob/${blobId})` }),
+      ],
       folders: [{ id: "new-folder", name: "新文件夹", parentId: null, createdAt: 1, updatedAt: 1 }],
       blobs: [{ id: blobId, noteId: "new-note", mime: "text/plain", size: 3, base64: btoa("abc") }],
     };
@@ -307,7 +334,9 @@ describe("LocalDataSource.replaceAll / mergeAll", () => {
         makeNote({ id: "fresh", content: "新增", updatedAt: 1 }),
       ],
       folders: [],
-      blobs: [{ id: "new-blob", noteId: "fresh", mime: "text/plain", size: 3, base64: btoa("abc") }],
+      blobs: [
+        { id: "new-blob", noteId: "fresh", mime: "text/plain", size: 3, base64: btoa("abc") },
+      ],
     };
 
     const result = await ds.mergeAll(payload);

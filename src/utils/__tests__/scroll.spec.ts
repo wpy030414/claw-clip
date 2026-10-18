@@ -1,10 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  animateScrollTo,
-  cancelScroll,
-  prefersReducedMotion,
-  scrollTopFor,
-} from "@/utils/scroll";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { animateScrollTo, cancelScroll, prefersReducedMotion, scrollTopFor } from "@/utils/scroll";
 
 const realMatchMedia = window.matchMedia;
 
@@ -93,7 +88,12 @@ describe("scrollTopFor", () => {
 
   it("结果与当前滚动位置无关：同一布局下每帧重算得到同一落点", () => {
     const target = (scrollTop: number) =>
-      scrollTopFor({ scrollTop, currentTop: 900 - scrollTop, containerTop: 100, maxScrollTop: 5000 });
+      scrollTopFor({
+        scrollTop,
+        currentTop: 900 - scrollTop,
+        containerTop: 100,
+        maxScrollTop: 5000,
+      });
     expect(target(0)).toBe(800);
     expect(target(300)).toBe(800);
     expect(target(800)).toBe(800);

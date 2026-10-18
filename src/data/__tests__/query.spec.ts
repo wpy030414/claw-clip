@@ -1,7 +1,7 @@
 /**
  * query 单测：内存过滤 / 排序 / 分页。
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { LocalDataSource } from "@/data/local";
 import { queryNotes } from "@/data/query";
 import { makeNote } from "@/test/factories";
@@ -10,11 +10,56 @@ const ds = new LocalDataSource();
 
 async function seed() {
   // 造 5 条笔记，updatedAt 递增，含不同 tags
-  await ds.upsertNote(makeNote({ id: "n1", title: "苹果派食谱", content: "面粉 苹果 糖", tags: ["美食"], updatedAt: 100, createdAt: 100 }));
-  await ds.upsertNote(makeNote({ id: "n2", title: "React 笔记", content: "hooks effect state", tags: ["编程", "前端"], updatedAt: 200, createdAt: 150 }));
-  await ds.upsertNote(makeNote({ id: "n3", title: "读书摘录", content: "人生若只如初见", tags: ["读书"], updatedAt: 300, createdAt: 300 }));
-  await ds.upsertNote(makeNote({ id: "n4", title: "前端框架对比", content: "React Vue Svelte", tags: ["编程", "前端"], updatedAt: 400, createdAt: 200 }));
-  await ds.upsertNote(makeNote({ id: "n5", title: "购物清单", content: "牛奶 面包 苹果", tags: ["生活"], updatedAt: 500, createdAt: 500 }));
+  await ds.upsertNote(
+    makeNote({
+      id: "n1",
+      title: "苹果派食谱",
+      content: "面粉 苹果 糖",
+      tags: ["美食"],
+      updatedAt: 100,
+      createdAt: 100,
+    }),
+  );
+  await ds.upsertNote(
+    makeNote({
+      id: "n2",
+      title: "React 笔记",
+      content: "hooks effect state",
+      tags: ["编程", "前端"],
+      updatedAt: 200,
+      createdAt: 150,
+    }),
+  );
+  await ds.upsertNote(
+    makeNote({
+      id: "n3",
+      title: "读书摘录",
+      content: "人生若只如初见",
+      tags: ["读书"],
+      updatedAt: 300,
+      createdAt: 300,
+    }),
+  );
+  await ds.upsertNote(
+    makeNote({
+      id: "n4",
+      title: "前端框架对比",
+      content: "React Vue Svelte",
+      tags: ["编程", "前端"],
+      updatedAt: 400,
+      createdAt: 200,
+    }),
+  );
+  await ds.upsertNote(
+    makeNote({
+      id: "n5",
+      title: "购物清单",
+      content: "牛奶 面包 苹果",
+      tags: ["生活"],
+      updatedAt: 500,
+      createdAt: 500,
+    }),
+  );
 }
 
 beforeEach(async () => {

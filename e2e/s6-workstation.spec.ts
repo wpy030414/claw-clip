@@ -64,10 +64,7 @@ test("文件夹：双击不重命名、三点菜单重命名、不可嵌套、di
   await expect(personal).toBeVisible();
 
   // 不可嵌套：两个文件夹左边界相同（同一层）
-  const [workBox, personalBox] = await Promise.all([
-    working.boundingBox(),
-    personal.boundingBox(),
-  ]);
+  const [workBox, personalBox] = await Promise.all([working.boundingBox(), personal.boundingBox()]);
   expect(workBox && personalBox).toBeTruthy();
   expect(Math.abs(workBox!.x - personalBox!.x)).toBeLessThan(1);
 

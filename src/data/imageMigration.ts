@@ -86,10 +86,7 @@ function replaceAll(content: string, from: string, to: string): string {
 }
 
 /** 流式读取响应体并上报增量字节；环境不支持流时退回 res.blob()。 */
-async function readWithProgress(
-  res: Response,
-  onBytes: (bytes: number) => void,
-): Promise<Blob> {
+async function readWithProgress(res: Response, onBytes: (bytes: number) => void): Promise<Blob> {
   if (!res.body) return res.blob();
   const reader = res.body.getReader();
   const chunks: BlobPart[] = [];
@@ -239,7 +236,8 @@ export async function migrateHostImagesToLocal(
         const raw = await readWithProgress(res, (bytes) => {
           options.onSpeed?.(meter.add(bytes));
         });
-        const mime = raw.type && raw.type !== "application/octet-stream" ? raw.type : guessMimeFromUrl(url);
+        const mime =
+          raw.type && raw.type !== "application/octet-stream" ? raw.type : guessMimeFromUrl(url);
         const blob = raw.type === mime ? raw : new Blob([await raw.arrayBuffer()], { type: mime });
         const firstNoteId = [...noteIds][0] ?? "";
         blobId = await saveBlob(firstNoteId, blob, { sourceUrl: url });

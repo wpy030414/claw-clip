@@ -3,3 +3,21 @@
 # 不需要执行；这里显式拒绝，避免 `pnpm install --frozen-lockfile` 在 Actions 失败。
 allowBuilds:
   core-js: false
+
+# 下面三块由 `vp migrate` 生成：把 vite / vitest 对齐到 Vite+ 自带的内核，
+# 避免项目里同时存在两份 Vite。本文件不是 workspace 定义（没有 packages 字段）。
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.3.0
+  vitest: 5.0.5
+  vite-plus: 1.3.0
+  "@vitest/coverage-v8": 5.0.5
+overrides:
+  vite@*: "catalog:"
+  vitest@*: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"

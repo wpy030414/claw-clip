@@ -1,7 +1,7 @@
 # 架构文档（ARCHITECTURE）
 
 > 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、预览同源的 DOCX/PDF 导出、MD/DOCX/PDF 互导。
-> Vite 8 + React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/导出渲染）+ docx / docx-math（原生 Word 公式）+ 浏览器打印（矢量 PDF）+ Zustand + IndexedDB。
+> Vite+（Vite 8 / Rolldown）+ React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/导出渲染）+ docx / docx-math（原生 Word 公式）+ 浏览器打印（矢量 PDF）+ Zustand + IndexedDB。
 >
 > 编辑工作区对标 markdownassistant：**左源码 + 右实时预览 + 格式工具栏**，三态视图（编辑 / 分屏 / 预览）。
 >
@@ -35,6 +35,7 @@
 ## 2. 数据流
 
 ### 编辑 → 落库
+
 ```
 用户输入 → CodeMirror 6 updateListener（docChanged）
   → useMarkdownSession.onChange
@@ -44,6 +45,7 @@
 ```
 
 ### 打开 → 编辑
+
 ```
 notesStore.openNote(id)
   → 优先读内存 noteCache（避免「卸载 flush 未落库 → 新实例读 IDB 旧值」竞态）
@@ -55,6 +57,7 @@ notesStore.openNote(id)
 不做 value→doc 回流——实测回流会打断 CJK 组合输入，导致字符乱序（见 ADR-016）。
 
 ### 附件
+
 ```
 选择文件 / 粘贴 / 拖入
   → saveBlob(noteId, file) → IndexedDB blobs 表 → blobId（refCount=0）
@@ -70,11 +73,13 @@ notesStore.openNote(id)
 `attachmentIds`、清理历史孤儿与旧版本无 `refCount` 的记录（失败不阻塞启动）。
 
 ### 实时预览 / 导出
-```
+
+````
 Markdown 源码 → debounce(120ms) → hydrateMarkdown(clawclip:// → object URL)
   → markdown-it（html:true + GFM/脚注/定义列表/上下标/高亮/KaTeX + highlight.js）
   → HTML → 右侧预览区（分屏 / 预览视图）；```mermaid 代码块由 MarkdownPreview 懒加载渲染为 SVG
-```
+````
+
 预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出时用**当前正文重新渲染一次**
 （`renderForExport`，避免 120ms 防抖缓存导出上一版）。
 预览与导出**共用同一份 HTML 与内置排版 CSS**；导出前统一经 `prepareExportHtml()` 把运行时资源
@@ -84,6 +89,7 @@ annotation 经 `docx/math::latexToMath()` 转成 Word 原生 OMML。PDF 把同�
 iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜索），用户在打印对话框「另存为 PDF」。
 
 ### 导入 / 导出
+
 ```
 导出 MD   → 正文原文下载
 导出 HTML → 预览 CSS + 浅色高亮 + Mermaid SVG + 附件 data URL 内嵌为单文件（公式走原生 MathML，强制浅色）
@@ -98,13 +104,13 @@ iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜
 
 单一 data router，`/n/:noteId` 表达「选中笔记」。`AppShell` 用 `useIsDesktop()`（`(min-width:900px)`）分派：
 
-| | 桌面工作台（≥900px） | 移动端（<900px） |
-|---|---|---|
+|      | 桌面工作台（≥900px）                                                              | 移动端（<900px）                                                                         |
+| ---- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | 导航 | **可收侧栏**：品牌行 → 等宽页签 → 行级「新建」→ 文件夹/笔记树 → 底部统计/明暗切换 | 首页复用侧栏内容：品牌行 → 行级「新建」→ 文件夹/笔记树 → 底部统计/明暗切换（无大纲页签） |
-| 主区 | **编辑工作区**：编辑 / 分屏 / 预览三态；默认分屏 | 笔记树 or 全屏编辑器（有 noteId 则全屏）；split 退化为编辑 |
-| 列表 | 侧栏内**文件夹 + 笔记统一树**（`NoteTree`） | 同一棵 `NoteTree` |
-| 大纲 | 侧栏「大纲」页签 | 不提供（移动端无常驻编辑器） |
-| 返回 | 无需（侧栏常驻） | `EditorPane onBack` 回列表 |
+| 主区 | **编辑工作区**：编辑 / 分屏 / 预览三态；默认分屏                                  | 笔记树 or 全屏编辑器（有 noteId 则全屏）；split 退化为编辑                               |
+| 列表 | 侧栏内**文件夹 + 笔记统一树**（`NoteTree`）                                       | 同一棵 `NoteTree`                                                                        |
+| 大纲 | 侧栏「大纲」页签                                                                  | 不提供（移动端无常驻编辑器）                                                             |
+| 返回 | 无需（侧栏常驻）                                                                  | `EditorPane onBack` 回列表                                                               |
 
 **侧栏开关**：`DesktopLayout` 在主内容左上角渲染一个 `main-sidebar-toggle`
 （`data-testid` 随状态切换 `btn-sidebar-close` / `btn-sidebar-open`）；
@@ -204,12 +210,12 @@ CodeMirror 6 是命令式 API，React 封装遵循：
 
 IndexedDB `claw-clip-v2`（v3，与旧库物理隔离）：
 
-| store | keyPath | 索引 | 内容 |
-|---|---|---|---|
-| `notes` | id | updatedAt/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId） |
-| `folders` | id | parentId/updatedAt | 文件夹（扁平存储 + `order` 手动排序） |
-| `blobs` | id | noteId/mime | 附件 Blob（非 ArrayBuffer）+ `refCount` 引用计数 + 可选 `remoteUrl`（图床缓存） |
-| `meta` | key | — | schemaVersion 等 |
+| store     | keyPath | 索引                                          | 内容                                                                            |
+| --------- | ------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
+| `notes`   | id      | updatedAt/createdAt/tags(multiEntry)/folderId | 完整 Note（含 content、folderId）                                               |
+| `folders` | id      | parentId/updatedAt                            | 文件夹（扁平存储 + `order` 手动排序）                                           |
+| `blobs`   | id      | noteId/mime                                   | 附件 Blob（非 ArrayBuffer）+ `refCount` 引用计数 + 可选 `remoteUrl`（图床缓存） |
+| `meta`    | key     | —                                             | schemaVersion 等                                                                |
 
 `datasource.ts` 门面按 `enableStoringLocally` 切 Local/Remote（占位）。`db.ts` 提供
 `openDB()` Promise 单例 + `withTx()` + `__resetDbSingleton()`；v1→v2 升级会补建 `folders`
@@ -255,7 +261,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
   自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、速度计、导入语义等（299 例）。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，63 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，63 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
   文件夹折叠与删除确认/上传导入/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
   全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）/
@@ -265,32 +271,32 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 ## 8. 构建与部署
 
-- 包管理器 **pnpm**（lockfile 为 `pnpm-lock.yaml`；`package-lock.json` 已移除）。依赖统一用 `pnpm install --frozen-lockfile` 安装。
-- Vite 8 + `@vitejs/plugin-react`，`base:'/claw-clip/'`，dev 端口 24680，`@`→src alias。
+- 包管理器 **pnpm**（lockfile 为 `pnpm-lock.yaml`；`package-lock.json` 已移除）。本地 `pnpm install`，CI 由 `setup-vp` 完成安装。
+- Vite+（`vp dev/build/check/test`）+ `@vitejs/plugin-react`；`base` 由 `PAGES_BASE_PATH` 注入（本地恒为 `/`），dev 端口 24680，`@`→src alias。
 - KaTeX 字体与 Material Symbols 字体随构建产物自托管，运行时零公网 CDN 依赖。
-- CI（`.github/workflows/deploy.yml`）：Node 24 + `pnpm install --frozen-lockfile` + type-check + 单测门禁 + build + `cp dist/index.html dist/404.html`（SPA fallback）→ GitHub Pages。
+- CI（`.github/workflows/deploy.yml`）：`setup-vp`（从 `.nvmrc` 读取 Node 24 + 依赖安装）→ `vp check` → `vp test run` → Playwright E2E → `pnpm run build`（type-check + `vp build` + 生成 `404.html`）→ `touch dist/.nojekyll` → `configure-pages@v6` / `upload-pages-artifact@v5`（`include-hidden-files: true`）→ `deploy-pages@v5`。
 
 ## 9. 关键文件索引
 
-| 文件 | 职责 |
-|---|---|
-| `src/data/db.ts` / `local.ts` / `query.ts` | IndexedDB 连接、CRUD、过滤排序分页 |
-| `src/data/exchange.ts` | MD/DOCX/PDF 导入导出门面（重型依赖动态加载） |
-| `src/data/export/prepare.ts` | 导出自包含预处理：附件 data URL + Mermaid 渲染 |
-| `src/data/export/math.ts` | KaTeX TeX → docx 原生 OMML（`docx/math`） |
-| `src/data/export/html.ts` | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`） |
-| `src/data/export/print.ts` | 隐藏 iframe → 浏览器打印（矢量 PDF） |
-| `src/utils/mermaid.ts` | Mermaid 渲染（预览/导出共用，输出 SVG/PNG） |
-| `src/data/blobStore.ts` | 附件引用计数/回收 + `clawclip://` ⇄ object URL |
-| `src/stores/notesStore.ts` | 笔记/文件夹真相源 + noteCache + 列表请求序号 |
-| `src/hooks/useMarkdownSession.ts` | 编辑会话：加载、节流自动保存、卸载落库 |
-| `src/hooks/useRenderedMarkdown.ts` | 按需渲染 + 附件水合 |
-| `src/components/editor/MarkdownEditor.tsx` | CodeMirror 6 封装 |
-| `src/features/editor/EditorPane.tsx` | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出 |
-| `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令） |
-| `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数 |
-| `src/utils/markdownFormat.ts` | 整篇 Markdown 格式化（幂等、代码块保护） |
-| `src/features/preview/themes.ts` | 内置预览/导出排版 CSS |
+| 文件                                        | 职责                                                  |
+| ------------------------------------------- | ----------------------------------------------------- |
+| `src/data/db.ts` / `local.ts` / `query.ts`  | IndexedDB 连接、CRUD、过滤排序分页                    |
+| `src/data/exchange.ts`                      | MD/DOCX/PDF 导入导出门面（重型依赖动态加载）          |
+| `src/data/export/prepare.ts`                | 导出自包含预处理：附件 data URL + Mermaid 渲染        |
+| `src/data/export/math.ts`                   | KaTeX TeX → docx 原生 OMML（`docx/math`）             |
+| `src/data/export/html.ts`                   | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`） |
+| `src/data/export/print.ts`                  | 隐藏 iframe → 浏览器打印（矢量 PDF）                  |
+| `src/utils/mermaid.ts`                      | Mermaid 渲染（预览/导出共用，输出 SVG/PNG）           |
+| `src/data/blobStore.ts`                     | 附件引用计数/回收 + `clawclip://` ⇄ object URL        |
+| `src/stores/notesStore.ts`                  | 笔记/文件夹真相源 + noteCache + 列表请求序号          |
+| `src/hooks/useMarkdownSession.ts`           | 编辑会话：加载、节流自动保存、卸载落库                |
+| `src/hooks/useRenderedMarkdown.ts`          | 按需渲染 + 附件水合                                   |
+| `src/components/editor/MarkdownEditor.tsx`  | CodeMirror 6 封装                                     |
+| `src/features/editor/EditorPane.tsx`        | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出           |
+| `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令）                                |
+| `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数          |
+| `src/utils/markdownFormat.ts`               | 整篇 Markdown 格式化（幂等、代码块保护）              |
+| `src/features/preview/themes.ts`            | 内置预览/导出排版 CSS                                 |
 
 ## 10. 已知限制
 

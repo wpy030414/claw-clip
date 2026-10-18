@@ -11,9 +11,7 @@ export const MOBILE_QUERY = "(max-width: 599px)";
 
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState<boolean>(() =>
-    typeof window !== "undefined" && window.matchMedia
-      ? window.matchMedia(query).matches
-      : false,
+    typeof window !== "undefined" && window.matchMedia ? window.matchMedia(query).matches : false,
   );
 
   useEffect(() => {

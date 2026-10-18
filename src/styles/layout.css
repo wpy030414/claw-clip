@@ -999,11 +999,19 @@ m3e-theme {
   color: var(--md-sys-color-on-surface, #1d1b20);
 }
 
-.outline-item[data-level="2"] { padding-left: 24px; }
-.outline-item[data-level="3"] { padding-left: 38px; font-size: 0.82rem; }
+.outline-item[data-level="2"] {
+  padding-left: 24px;
+}
+.outline-item[data-level="3"] {
+  padding-left: 38px;
+  font-size: 0.82rem;
+}
 .outline-item[data-level="4"],
 .outline-item[data-level="5"],
-.outline-item[data-level="6"] { padding-left: 52px; font-size: 0.8rem; }
+.outline-item[data-level="6"] {
+  padding-left: 52px;
+  font-size: 0.8rem;
+}
 
 .outline-item:hover {
   background: var(--md-sys-color-surface-container-high, #ece6f0);

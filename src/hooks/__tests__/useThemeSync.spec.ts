@@ -2,7 +2,7 @@
  * useThemeSync 单测：scheme → resolvedScheme 解析（方案 B 明暗同步引擎）。
  * 用一个可控的 matchMedia mock（覆盖 setup 的静态 mock）验证 auto 跟随系统。
  */
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
 import { renderHook, act } from "@testing-library/react";
 import { useThemeSync } from "@/hooks/useThemeSync";
 import { useSettingsStore } from "@/stores/settingsStore";

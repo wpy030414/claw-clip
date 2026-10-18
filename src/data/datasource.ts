@@ -33,11 +33,7 @@ export interface DataSource {
   /** 按 id 取完整 Note（含 content）。 */
   getNote(id: string): Promise<Note | undefined>;
   /** 过滤/排序/分页列表，返回 { total, items: NoteSummary[] }。 */
-  listNotes(
-    filter: NoteFilter,
-    pageSize?: number,
-    pageOffset?: number,
-  ): Promise<QueryResult>;
+  listNotes(filter: NoteFilter, pageSize?: number, pageOffset?: number): Promise<QueryResult>;
   /** 删除笔记（按引用计数释放其附件；无笔记引用时自动回收 blob）。 */
   deleteNote(id: string): Promise<void>;
 

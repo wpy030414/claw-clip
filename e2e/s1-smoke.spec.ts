@@ -83,7 +83,7 @@ test("S1: 明暗模式跟随系统（scheme=auto）", async ({ page }) => {
     const m = hex.match(/^#([0-9a-f]{6})$/i);
     if (!m) return -1;
     const n = parseInt(m[1], 16);
-    return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255));
+    return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
   };
 
   const ld = luminance(surfaceDark);

@@ -48,7 +48,12 @@ interface Props {
 
 export function MarkdownToolbar({ onCommand }: Props) {
   return (
-    <div className="editor-toolbar" role="toolbar" aria-label="Markdown 格式工具栏" data-testid="md-toolbar">
+    <div
+      className="editor-toolbar"
+      role="toolbar"
+      aria-label="Markdown 格式工具栏"
+      data-testid="md-toolbar"
+    >
       {GROUPS.map((group, gi) => (
         <div className="editor-toolbar-group" key={gi}>
           {group.map((item) => (

@@ -1,7 +1,7 @@
 /**
  * IDB 统计单测：笔记数、字节估算与人类可读格式化。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { LocalDataSource } from "@/data/local";
 import { formatBytes, getDbStats } from "@/data/stats";
 import { emptyFolder } from "@/types/folder";

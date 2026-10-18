@@ -1,7 +1,7 @@
 /**
  * uiStore 单测：UI 瞬态 + 确认对话框队列。
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { defaultViewMode, useUiStore } from "@/stores/uiStore";
 
 beforeEach(() => {
@@ -94,7 +94,9 @@ describe("uiStore 确认对话框队列", () => {
   });
 
   it("popConfirm 按 id 出队", () => {
-    const id = useUiStore.getState().pushConfirm({ content: "X", onConfirm: vi.fn(), onCancel: vi.fn() });
+    const id = useUiStore
+      .getState()
+      .pushConfirm({ content: "X", onConfirm: vi.fn(), onCancel: vi.fn() });
     useUiStore.getState().popConfirm(id);
     expect(useUiStore.getState().confirmQueue).toHaveLength(0);
   });
@@ -106,8 +108,12 @@ describe("uiStore 确认对话框队列", () => {
   });
 
   it("pushConfirm 生成的 id 唯一", () => {
-    const id1 = useUiStore.getState().pushConfirm({ content: "1", onConfirm: vi.fn(), onCancel: vi.fn() });
-    const id2 = useUiStore.getState().pushConfirm({ content: "2", onConfirm: vi.fn(), onCancel: vi.fn() });
+    const id1 = useUiStore
+      .getState()
+      .pushConfirm({ content: "1", onConfirm: vi.fn(), onCancel: vi.fn() });
+    const id2 = useUiStore
+      .getState()
+      .pushConfirm({ content: "2", onConfirm: vi.fn(), onCancel: vi.fn() });
     expect(id1).not.toBe(id2);
   });
 });

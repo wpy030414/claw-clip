@@ -65,7 +65,13 @@ function isElement(node: Node): node is HTMLElement {
 /** 行内节点 → docx TextRun 列表（加粗/斜体/删除线/行内代码/链接）。 */
 function inlineRuns(
   node: Node,
-  style: { bold?: boolean; italics?: boolean; strike?: boolean; code?: boolean; link?: boolean } = {},
+  style: {
+    bold?: boolean;
+    italics?: boolean;
+    strike?: boolean;
+    code?: boolean;
+    link?: boolean;
+  } = {},
 ): DocxChild[] {
   // 延迟到函数内 require 会破坏 ESM；由调用方传入构造器集合
   const { TextRun } = docxApi;
@@ -178,9 +184,7 @@ async function loadImage(
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(img, 0, 0, width, height);
-    const png = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/png"),
-    );
+    const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
     if (!png) return null;
     return { data: await png.arrayBuffer(), type: "png", width, height };
   } finally {
@@ -340,8 +344,7 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
         if (!["td", "th"].includes(cell.tagName.toLowerCase())) continue;
         cells.push(
           new TableCell({
-            shading:
-              cell.tagName.toLowerCase() === "th" ? { fill: "F3EDF7" } : undefined,
+            shading: cell.tagName.toLowerCase() === "th" ? { fill: "F3EDF7" } : undefined,
             children: [
               new Paragraph({
                 children: inlineRuns(cell, {
@@ -513,7 +516,9 @@ function isCjk(char: string): boolean {
   return /[　-鿿＀-￯]/.test(char);
 }
 
-function linesFromPage(items: Array<{ str?: string; transform?: number[]; width?: number; height?: number }>): PdfLine[] {
+function linesFromPage(
+  items: Array<{ str?: string; transform?: number[]; width?: number; height?: number }>,
+): PdfLine[] {
   const buckets = new Map<number, Array<{ str: string; x: number; size: number }>>();
   for (const item of items) {
     if (typeof item.str !== "string" || !item.transform) continue;
@@ -554,8 +559,7 @@ async function pdfToMarkdown(file: File): Promise<string> {
   const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
 
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) })
-    .promise;
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
   const allLines: PdfLine[] = [];
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
     const page = await pdf.getPage(pageNo);

@@ -78,7 +78,11 @@ export async function svgToPngDataUrl(
 function svgSize(svg: string): { width: number; height: number } {
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = doc.documentElement;
-  const viewBox = root.getAttribute("viewBox")?.trim().split(/[\s,]+/).map(Number);
+  const viewBox = root
+    .getAttribute("viewBox")
+    ?.trim()
+    .split(/[\s,]+/)
+    .map(Number);
   if (viewBox && viewBox.length === 4 && viewBox.every((n) => Number.isFinite(n))) {
     return { width: viewBox[2], height: viewBox[3] };
   }

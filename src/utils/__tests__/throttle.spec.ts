@@ -4,7 +4,7 @@
  * ★ throttle 是 leading+trailing 语义（离散动作立即落库，连续打字仍节流），
  *   这是附件自动保存 bug 修复的关键，行为必须被锁定。
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
 import { throttle, debounce } from "@/utils/throttle";
 
 describe("throttle (leading + trailing)", () => {

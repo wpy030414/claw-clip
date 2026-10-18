@@ -1,7 +1,7 @@
 /**
  * 图床迁移单测：双向迁移、引用改写、失败保留原状与去重。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { BLOB_URL_SCHEME, saveBlob } from "@/data/blobStore";
 import { LocalDataSource } from "@/data/local";
 import {
@@ -159,7 +159,10 @@ describe("migrateHostImagesToLocal", () => {
   });
 
   it("下载失败时保留原始外链", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 403 }) as unknown as Response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 403 }) as unknown as Response),
+    );
     const url = "https://img.example/blocked.png";
     await ds.upsertNote(makeNote({ id: "note-f", title: "F", content: `![x](${url})` }));
 
@@ -178,9 +181,7 @@ describe("migrateHostImagesToLocal", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    await ds.upsertNote(
-      makeNote({ id: "note-cache", title: "缓存", content: `![x](${url})` }),
-    );
+    await ds.upsertNote(makeNote({ id: "note-cache", title: "缓存", content: `![x](${url})` }));
     const result = await migrateHostImagesToLocal();
 
     expect(result).toMatchObject({ migrated: 1, failed: 0 });

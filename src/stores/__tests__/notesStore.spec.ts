@@ -1,7 +1,7 @@
 /**
  * notesStore 单测：笔记树数据态 + 乐观更新 + 派生字段重算。
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { useNotesStore } from "@/stores/notesStore";
 import { datasource } from "@/data/datasource";
 import { emptyFolder } from "@/types/folder";
@@ -158,8 +158,7 @@ describe("notesStore.revision（供侧栏统计刷新）", () => {
 });
 
 describe("notesStore.saveNote（真实修改才刷新 updatedAt）", () => {
-  const rowOf = (id: string) =>
-    useNotesStore.getState().treeNotes.find((n) => n.id === id)!;
+  const rowOf = (id: string) => useNotesStore.getState().treeNotes.find((n) => n.id === id)!;
 
   it("内容相同的保存不刷新 updatedAt（打开/关闭不算修改）", async () => {
     const id = await useNotesStore.getState().createNote();
@@ -185,9 +184,7 @@ describe("notesStore.saveNote（真实修改才刷新 updatedAt）", () => {
 
   it("无改动的保存不会把手动标题派生回去", async () => {
     const id = await useNotesStore.getState().createNote();
-    await useNotesStore
-      .getState()
-      .saveNote(id, { content: "# 正文标题", title: "手动标题" });
+    await useNotesStore.getState().saveNote(id, { content: "# 正文标题", title: "手动标题" });
     const before = rowOf(id).updatedAt;
 
     await useNotesStore.getState().saveNote(id, { content: "# 正文标题" });

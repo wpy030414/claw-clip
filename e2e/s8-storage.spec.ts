@@ -96,7 +96,9 @@ test("存储 dialog：用量、分解与排行", async ({ page }) => {
   // 持久化由应用自动申请：不暴露按钮，也不显示状态行
   await expect(page.getByTestId("storage-persist")).toHaveCount(0);
   await expect(page.getByTestId("storage-persistence")).toHaveCount(0);
-  expect(await page.evaluate(() => (window as unknown as { __persistCalls: number }).__persistCalls)).toBeGreaterThan(0);
+  expect(
+    await page.evaluate(() => (window as unknown as { __persistCalls: number }).__persistCalls),
+  ).toBeGreaterThan(0);
 
   // 大 dialog 尺寸：桌面下宽度应明显超过旧的小对话框（560px 上限）
   const box = await page.getByTestId("storage-dialog-content").boundingBox();
@@ -200,10 +202,7 @@ test("图床：切换到 img.scdn.io 后粘贴图片写外链，失败回退本�
   await expect(meta).not.toContainText("0 / 1");
   await expect(meta).toContainText(/正在连接|\/s/);
   // 进度浮层必须居中（全局 * { margin: 0 } 会覆盖 UA 的 dialog 居中）
-  const card = await page
-    .getByTestId("task-progress")
-    .locator(".task-progress-card")
-    .boundingBox();
+  const card = await page.getByTestId("task-progress").locator(".task-progress-card").boundingBox();
   const viewport = page.viewportSize()!;
   expect(card).toBeTruthy();
   expect(Math.abs(card!.x + card!.width / 2 - viewport.width / 2)).toBeLessThan(2);

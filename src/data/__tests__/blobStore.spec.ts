@@ -1,7 +1,7 @@
 /**
  * blobStore 单测：附件存取 + object URL 生命周期 + clawclip:// hydrate。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
   BLOB_URL_SCHEME,
   extractBlobRefIds,
@@ -173,9 +173,7 @@ describe("blobStore.reconcileBlobRefs（引用计数校准 + 孤儿回收）", (
     // 模拟旧版本记录：没有 refCount 字段
     const { refCount: _omit, ...legacy } = rec;
     await putRawBlob(legacy as BlobRecord);
-    await putRawNote(
-      makeNote({ id: "legacy-note", content: `![](${BLOB_URL_SCHEME}${id})` }),
-    );
+    await putRawNote(makeNote({ id: "legacy-note", content: `![](${BLOB_URL_SCHEME}${id})` }));
 
     await reconcileBlobRefs();
 

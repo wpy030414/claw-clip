@@ -45,13 +45,15 @@ export async function getDbStats(): Promise<DbStats> {
   for (const note of noteRows) bytes += jsonBytes(note);
   for (const folder of folderRows) bytes += jsonBytes(folder);
   for (const blob of blobRows) {
-    bytes += (blob.size || blob.data?.size || 0) + jsonBytes({
-      id: blob.id,
-      noteId: blob.noteId,
-      mime: blob.mime,
-      size: blob.size,
-      createdAt: blob.createdAt,
-    });
+    bytes +=
+      (blob.size || blob.data?.size || 0) +
+      jsonBytes({
+        id: blob.id,
+        noteId: blob.noteId,
+        mime: blob.mime,
+        size: blob.size,
+        createdAt: blob.createdAt,
+      });
   }
   for (const record of metaRows) bytes += jsonBytes(record);
 

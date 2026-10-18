@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import katex from "katex";
 import JSZip from "jszip";
 import {
@@ -176,9 +176,9 @@ describe("katexToMath（Word 原生公式）", () => {
     expect(api.latexToMath("\\frac{a}{b}")[0].constructor.name).toBe("MathFraction");
     expect(api.latexToMath("\\sqrt[3]{x}")[0].constructor.name).toBe("MathRadical");
     expect(api.latexToMath("\\hat{x}")[0].constructor.name).toBe("MathAccent");
-    expect(
-      api.latexToMath("\\begin{matrix}a&b\\\\c&d\\end{matrix}")[0].constructor.name,
-    ).toBe("MathMatrix");
+    expect(api.latexToMath("\\begin{matrix}a&b\\\\c&d\\end{matrix}")[0].constructor.name).toBe(
+      "MathMatrix",
+    );
   });
 
   it("把 KaTeX 节点转成 docx Math；未知命令返回 null", async () => {
@@ -234,9 +234,7 @@ describe("printHtmlDocument", () => {
 
     await printHtmlDocument("<!doctype html><html><body>hi</body></html>");
 
-    expect(doc.write).toHaveBeenCalledWith(
-      "<!doctype html><html><body>hi</body></html>",
-    );
+    expect(doc.write).toHaveBeenCalledWith("<!doctype html><html><body>hi</body></html>");
     expect(win.print).toHaveBeenCalledTimes(1);
     expect(onPrint).toHaveBeenCalledTimes(1);
     window.removeEventListener("clawclip:pdf-print", onPrint);

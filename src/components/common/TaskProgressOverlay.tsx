@@ -73,7 +73,11 @@ export function TaskProgressOverlay() {
               style={{ strokeDasharray: CIRCUMFERENCE, strokeDashoffset: offset }}
             />
           </svg>
-          <strong className="task-progress-title" id="task-progress-title" data-testid="task-progress-title">
+          <strong
+            className="task-progress-title"
+            id="task-progress-title"
+            data-testid="task-progress-title"
+          >
             {task.title}
           </strong>
           <span className="task-progress-meta" data-testid="task-progress-meta">

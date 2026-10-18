@@ -5,12 +5,7 @@
  * 拉取后由用户显式选择「合并（较新者胜）」或「覆盖（原子替换）」。
  */
 import { useState } from "react";
-import {
-  pullSnapshot,
-  pushSnapshot,
-  validateGistToken,
-  type PullResult,
-} from "@/data/cloudSync";
+import { pullSnapshot, pushSnapshot, validateGistToken, type PullResult } from "@/data/cloudSync";
 import { buildCloudSnapshot } from "@/data/snapshot";
 import { formatBytes } from "@/data/stats";
 import { useIntegrationStore } from "@/stores/integrationStore";
@@ -72,18 +67,13 @@ export function CloudSyncSection() {
     try {
       const { content, stats } = await buildCloudSnapshot({
         onProgress: (p) =>
-          setProgress(
-            p.phase === "images" ? `正在上传图片 ${p.done}/${p.total}` : "正在打包快照…",
-          ),
+          setProgress(p.phase === "images" ? `正在上传图片 ${p.done}/${p.total}` : "正在打包快照…"),
       });
       const result = await pushSnapshot({ token, gistId, content });
       setGistId(result.gistId);
       recordSync("push");
 
-      const parts = [
-        `已推送 ${formatBytes(stats.bytes)}`,
-        `笔记 ${stats.notes} 条`,
-      ];
+      const parts = [`已推送 ${formatBytes(stats.bytes)}`, `笔记 ${stats.notes} 条`];
       if (stats.imagesUploaded > 0) parts.push(`新上传图片 ${stats.imagesUploaded} 张`);
       if (stats.imagesReused > 0) parts.push(`复用图床缓存 ${stats.imagesReused} 张`);
       if (stats.imagesFailed > 0) parts.push(`${stats.imagesFailed} 张图片上传失败，已内嵌`);
@@ -154,8 +144,8 @@ export function CloudSyncSection() {
           warning
         </span>
         <span>
-          secret gist 只是不出现在列表里——任何拿到链接的人都能读取快照内容，快照不加密。
-          PAT 会以明文保存在本机 localStorage，请使用仅勾选 gist 权限的令牌，勿在共享设备上使用。
+          secret gist 只是不出现在列表里——任何拿到链接的人都能读取快照内容，快照不加密。 PAT
+          会以明文保存在本机 localStorage，请使用仅勾选 gist 权限的令牌，勿在共享设备上使用。
         </span>
       </div>
 
@@ -175,11 +165,7 @@ export function CloudSyncSection() {
             spellCheck={false}
             onChange={(e) => setToken(e.target.value)}
           />
-          <button
-            type="button"
-            className="storage-btn"
-            onClick={() => setShowToken((v) => !v)}
-          >
+          <button type="button" className="storage-btn" onClick={() => setShowToken((v) => !v)}>
             {showToken ? "隐藏" : "显示"}
           </button>
           <button
@@ -262,9 +248,11 @@ export function CloudSyncSection() {
         <div className="storage-card" data-testid="storage-sync-preview">
           <p className="storage-hint">
             快照：{pendingPull.payload.notes.length} 条笔记 ·{" "}
-            {pendingPull.payload.folders?.length ?? 0} 个文件夹 ·{" "}
-            {pendingPull.payload.blobs.length} 个附件 · {formatBytes(pendingPull.bytes)}
-            {pendingPull.updatedAt ? ` · 远端更新于 ${new Date(pendingPull.updatedAt).toLocaleString()}` : ""}
+            {pendingPull.payload.folders?.length ?? 0} 个文件夹 · {pendingPull.payload.blobs.length}{" "}
+            个附件 · {formatBytes(pendingPull.bytes)}
+            {pendingPull.updatedAt
+              ? ` · 远端更新于 ${new Date(pendingPull.updatedAt).toLocaleString()}`
+              : ""}
           </p>
           <label className="storage-check">
             <input
@@ -305,11 +293,7 @@ export function CloudSyncSection() {
             >
               {busy === "apply" ? "导入中…" : "应用快照"}
             </button>
-            <button
-              type="button"
-              className="storage-btn"
-              onClick={() => setPendingPull(null)}
-            >
+            <button type="button" className="storage-btn" onClick={() => setPendingPull(null)}>
               取消
             </button>
           </div>

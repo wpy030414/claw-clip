@@ -47,7 +47,10 @@ function notePreview(note: NoteSummary): string {
   if (!excerpt) return "空笔记";
   const title = (note.title || "").trim();
   if (title && excerpt.startsWith(title)) {
-    const rest = excerpt.slice(title.length).replace(/^[\s·:：\-—]+/, "").trim();
+    const rest = excerpt
+      .slice(title.length)
+      .replace(/^[\s·:：\-—]+/, "")
+      .trim();
     return rest || "空笔记";
   }
   return excerpt;
@@ -77,9 +80,12 @@ export function NoteTree() {
   /** 待确认删除的文件夹；非空时打开 M3E 确认 dialog。 */
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null);
   /** 文件夹行「更多」popover 菜单（固定定位在按钮下方）。 */
-  const [folderMenu, setFolderMenu] = useState<
-    { id: string; top: number; left: number; host: HTMLElement } | null
-  >(null);
+  const [folderMenu, setFolderMenu] = useState<{
+    id: string;
+    top: number;
+    left: number;
+    host: HTMLElement;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commitLock = useRef(false);
   const cancelRef = useRef(false);
@@ -212,7 +218,10 @@ export function NoteTree() {
   const treeGroups = useMemo(() => {
     const map = new Map<string | null, Array<{ note: NoteSummary; exiting: boolean }>>();
     for (const [key, arr] of notesByFolder) {
-      map.set(key, arr.map((note) => ({ note, exiting: false })));
+      map.set(
+        key,
+        arr.map((note) => ({ note, exiting: false })),
+      );
     }
     const liveFolderIds = new Set(folders.map((f) => f.id));
     for (const ghost of ghosts) {
@@ -228,11 +237,8 @@ export function NoteTree() {
     return map;
   }, [notesByFolder, ghosts, folders]);
 
-  const draggingNote = draggingNoteId
-    ? notes.find((n) => n.id === draggingNoteId)
-    : undefined;
-  const draggingInsideFolder =
-    !!draggingNote && (draggingNote.folderId ?? null) !== null;
+  const draggingNote = draggingNoteId ? notes.find((n) => n.id === draggingNoteId) : undefined;
+  const draggingInsideFolder = !!draggingNote && (draggingNote.folderId ?? null) !== null;
 
   /** 当前拖拽的是不是系统文件（而不是树内笔记/文件夹）。 */
   const hasFiles = (e: DragEvent<HTMLElement>) =>
@@ -314,8 +320,7 @@ export function NoteTree() {
       e.preventDefault();
       e.stopPropagation();
       const sourceId = folderDragIdRef.current;
-      const after =
-        folderDropTarget?.id === folder.id ? folderDropTarget.after : false;
+      const after = folderDropTarget?.id === folder.id ? folderDropTarget.after : false;
       clearFolderDrag();
       if (sourceId !== folder.id) void reorderFolders(sourceId, folder.id, after);
       return;
@@ -450,11 +455,9 @@ export function NoteTree() {
     const MENU_HEIGHT = 96;
     const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
     const below = rect.bottom + 4;
-    const top =
-      below + MENU_HEIGHT > window.innerHeight ? rect.top - MENU_HEIGHT - 4 : below;
+    const top = below + MENU_HEIGHT > window.innerHeight ? rect.top - MENU_HEIGHT - 4 : below;
     // 挂到 app-shell（m3e-theme 子树内）：既继承主题 token，又避开侧栏的动画 transform
-    const host =
-      (e.currentTarget.closest(".app-shell") as HTMLElement | null) ?? document.body;
+    const host = (e.currentTarget.closest(".app-shell") as HTMLElement | null) ?? document.body;
     setFolderMenu({ id: folder.id, top, left, host });
   };
 
@@ -564,7 +567,11 @@ export function NoteTree() {
     if (!editing || editing.mode !== "create") return null;
     const value = editing.name;
     return (
-      <div key="editor" className="tree-row tree-row--editor" style={{ paddingLeft: noteIndent(depth) }}>
+      <div
+        key="editor"
+        className="tree-row tree-row--editor"
+        style={{ paddingLeft: noteIndent(depth) }}
+      >
         <span className="material-symbols-outlined" aria-hidden="true">
           folder
         </span>
@@ -575,9 +582,7 @@ export function NoteTree() {
           aria-label="文件夹名称"
           data-testid="folder-edit-input"
           onFocus={(e) => e.currentTarget.select()}
-          onChange={(e) =>
-            setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))
-          }
+          onChange={(e) => setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -722,11 +727,7 @@ export function NoteTree() {
     );
   };
 
-  const renderNote = (
-    note: NoteSummary,
-    depth: number,
-    exiting = false,
-  ): JSX.Element => (
+  const renderNote = (note: NoteSummary, depth: number, exiting = false): JSX.Element => (
     <div
       key={note.id}
       className={[
@@ -798,9 +799,7 @@ export function NoteTree() {
     return rows;
   };
 
-  const targetFolder = currentFolderId
-    ? folders.find((f) => f.id === currentFolderId)
-    : undefined;
+  const targetFolder = currentFolderId ? folders.find((f) => f.id === currentFolderId) : undefined;
   const isEmpty = folders.length === 0 && notes.length === 0;
 
   return (
@@ -908,9 +907,7 @@ export function NoteTree() {
       >
         <span slot="header">新建</span>
         <div className="create-dialog" data-testid="create-dialog-content">
-          {targetFolder && (
-            <p className="create-dialog-hint">笔记位置：{targetFolder.name}</p>
-          )}
+          {targetFolder && <p className="create-dialog-hint">笔记位置：{targetFolder.name}</p>}
           <button
             type="button"
             className="create-dialog-option"

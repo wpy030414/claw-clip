@@ -23,7 +23,12 @@ import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
-import { buildCommand, markerFromInput, wrapSelection, type MarkdownCommand } from "./markdownCommands";
+import {
+  buildCommand,
+  markerFromInput,
+  wrapSelection,
+  type MarkdownCommand,
+} from "./markdownCommands";
 import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
 
 /** 大纲跳转贴顶时保留的留白（与旧 scrollIntoView 的 yMargin 一致）。 */
@@ -158,11 +163,12 @@ function themeExtension(fontSize: number) {
       backgroundColor: "var(--editor-selection-bg-idle, rgba(0, 172, 193, 0.22))",
       borderRadius: "2px",
     },
-    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground.cm-selectionBackground": {
-      backgroundColor: "var(--editor-selection-bg, rgba(0, 188, 212, 0.34))",
-      boxShadow: "inset 0 0 0 1px var(--editor-selection-ring, rgba(0, 172, 193, 0.7))",
-      borderRadius: "2px",
-    },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground.cm-selectionBackground":
+      {
+        backgroundColor: "var(--editor-selection-bg, rgba(0, 188, 212, 0.34))",
+        boxShadow: "inset 0 0 0 1px var(--editor-selection-ring, rgba(0, 172, 193, 0.7))",
+        borderRadius: "2px",
+      },
     // 同词高亮（highlightSelectionMatches）跟随同一色系，不抢选中态
     ".cm-selectionMatch.cm-selectionMatch": {
       backgroundColor: "var(--editor-selection-match, rgba(0, 188, 212, 0.14))",
@@ -349,7 +355,5 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
     measure: () => viewRef.current?.requestMeasure(),
   }));
 
-  return (
-    <div className="md-editor-host" data-testid="md-editor" ref={hostRef} />
-  );
+  return <div className="md-editor-host" data-testid="md-editor" ref={hostRef} />;
 });

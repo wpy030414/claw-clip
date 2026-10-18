@@ -1,7 +1,7 @@
 /**
  * 存储报告单测：分解、排行、共享附件均摊、孤儿字节与配额降级。
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { BLOB_URL_SCHEME } from "@/data/blobStore";
 import { withTx } from "@/data/db";
 import { LocalDataSource } from "@/data/local";
@@ -85,7 +85,11 @@ describe("getStorageReport", () => {
     const noteTotal = report.noteRanking.reduce((sum, n) => sum + n.totalBytes, 0);
     const blobMeta = report.stores.blobs.bytes - report.binaryBytes;
     const total =
-      noteTotal + report.orphanBytes + report.stores.folders.bytes + blobMeta + report.stores.meta.bytes;
+      noteTotal +
+      report.orphanBytes +
+      report.stores.folders.bytes +
+      blobMeta +
+      report.stores.meta.bytes;
     expect(total).toBeCloseTo(report.appBytes, 5);
   });
 

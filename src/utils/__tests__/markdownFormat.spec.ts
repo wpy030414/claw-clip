@@ -1,7 +1,7 @@
 /**
  * Markdown 格式化单测：语义安全的强制校准规则 + 幂等性。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { formatMarkdown } from "@/utils/markdownFormat";
 
 describe("formatMarkdown 基础语法校准", () => {
@@ -16,9 +16,7 @@ describe("formatMarkdown 基础语法校准", () => {
   });
 
   it("任务列表：[X] 统一小写，复选框后只留一个空格", () => {
-    expect(formatMarkdown("- [X]   已完成\n* [ ]待办\n")).toBe(
-      "- [x] 已完成\n- [ ] 待办\n",
-    );
+    expect(formatMarkdown("- [X]   已完成\n* [ ]待办\n")).toBe("- [x] 已完成\n- [ ] 待办\n");
   });
 
   it("有序列表：统一标记后的空格，保留编号与分隔符", () => {
@@ -56,15 +54,7 @@ describe("formatMarkdown 空白与换行", () => {
 
 describe("formatMarkdown 代码块", () => {
   it("围栏代码块内部原样保留（含列表/空行/行尾空白）", () => {
-    const md = [
-      "```md",
-      "*   不规范的列表",
-      "",
-      "",
-      ">引用",
-      "```",
-      "",
-    ].join("\n");
+    const md = ["```md", "*   不规范的列表", "", "", ">引用", "```", ""].join("\n");
     expect(formatMarkdown(md)).toBe(md);
   });
 

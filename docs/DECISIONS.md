@@ -27,6 +27,7 @@
 **决策**：选 **Vditor 4.0（`mode:'ir'`）** 自封装成 React 组件。
 
 **理由**（实测对比 5 候选）：
+
 - Vditor 是**唯一开箱即用真 IR** 的库；Tiptap/Milkdown 是 ProseMirror 富文本 WYSIWYG，**永远看不到源码标记**（是 Notion 那种，不是 Typora 那种）；CodeMirror6 能做最忠实 IR 但大纲/公式/图表/表格全要从零造。
 - Vditor 的 Markdown 完备度最高（Lute 引擎 + KaTeX/MathJax 双引擎 + Mermaid/ECharts/PlantUML 图表全家桶 + 脚注 + ToC + FrontMatter），Typora checklist 覆盖度第一。
 - `upload.handler` 可拦截粘贴/拖拽文件写本地存储，天然契合 IndexedDB 附件模型。
@@ -41,6 +42,7 @@
 **背景**：主人指定 @m3e/react（Material Design 3 Web Components）做 UI。但 M3E **无任何编辑器组件，连 text-field/input 都没有**（实测：全库 137 标签零个编辑器，文本录入只有 `m3e-form-field` 容器包原生 input）。Vditor 又自带非 Material 风格的工具栏/大纲/主题——两者存在设计语言接缝。
 
 **决策**：
+
 - M3E 只做**外壳**（导航 nav-rail/nav-bar、分栏 split-pane、大纲 toc、工具栏、对话框、搜索、标签 chip、主题），编辑画布用 Vditor。
 - 视觉接缝走**方案 B**：保留 Vditor 完整工具栏/大纲，用 CSS 重写 `.vditor-*` 消费 M3E 的 `--md-sys-color-*` token、明暗跟随 M3E scheme。（方案 A 原样并存太割裂；方案 C 用 M3E 自建工具栏驱动 Vditor API 边际收益低且脆弱。）
 
@@ -71,6 +73,7 @@
 **决策**：换新模型 + 新库名 `claw-clip-v2`（与旧 `ClawClip` 物理隔离），**不写迁移代码**，不动旧库。
 
 **Note v2 关键设计**（对初稿的纠正）：
+
 - `id: string`（UUID）——不再用时间戳当 id。
 - **编辑原地更新（`put`），永不改 id**——根除旧「编辑=删旧建新」的语义 bug（旧 `edited.ts` 实测确认）。
 - 加 `wordCount`/`excerpt` **冗余字段** + 列表投影 `NoteSummary`——列表页不读 content，避免旧版「整条 Blog（含内联图片 ArrayBuffer）全进内存」的性能问题（对应旧 commit "optimize performance of loading media"）。
@@ -89,6 +92,7 @@
 **背景**：旧版把 `ArrayBuffer[]` 内联进每条 Blog 文档。Markdown 图片需要 URL 引用，且内联二进制拖慢列表加载。
 
 **决策**：
+
 - 附件存独立 IndexedDB `blobs` 表，`data` 存 **`Blob`**（非 ArrayBuffer）——IDB 原生支持 Blob 结构化克隆，零拷贝、懒加载，不把二进制读进 JS 堆。
 - 正文用自定义协议 **`clawclip://blob/<id>`** 持久引用（object URL 是运行时产物、刷新即失效，不能写进 Markdown）。
 - 渲染前 `hydrateMarkdown()` 把 `clawclip://` 批量换成 object URL（`urlCache` 去重复用）；保存前 `dehydrateMarkdown()` 反解回 `clawclip://`（防 blob: URL 进库）；切笔记/卸载 `releaseBlobUrls()` revoke 防泄漏。
@@ -109,7 +113,7 @@
 
 **验证**（实测）：解包 vditor@4.0.0 tarball 确认 `dist` 全套 23MB 都在包内（`dist/js/` 含 katex/mermaid/highlight.js/lute/echarts/plantuml 等），运行时依赖仅 `diff-match-patch`。静态核验 24 个子资源路径本地 0 缺失。E2E 拦截 `unpkg.com` 后 IR 离线渲染成功、7 请求 0 个 unpkg。
 
-**后果**：仓库体积 +（woff2 3.8MB + public/vditor ~23MB，后者由构建脚本生成、`.gitignore` 排除）。GitHub Pages base 路径 `/claw-clip/` 下用 `import.meta.env.BASE_URL` 拼接（CSS 里无法用它，硬编码 `/claw-clip/` 并与 vite base 保持一致）。
+**后果**：仓库体积 +（woff2 3.8MB + public/vditor ~23MB，后者由构建脚本生成、`.gitignore` 排除）。GitHub Pages 子路径下的资源用 `import.meta.env.BASE_URL` 拼接；字体已迁入 `src/assets/fonts` 并改用 CSS 相对路径，由 Vite 自动加 base 前缀（ADR-050）。
 
 ---
 
@@ -118,10 +122,15 @@
 **背景**：调研假设 `upload.handler` 返回 string 会被 Vditor 自动插入正文。**实测推翻**。
 
 **决策/实测真相**：读 Vditor 4.0 源码，handler 返回值语义是 **validate 结果**：
+
 ```js
 isValidate = await handler(files);
-if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // string 被当【错误提示】弹出！
+if (typeof isValidate === "string") {
+  vditor.tip.show(isValidate);
+  return;
+} // string 被当【错误提示】弹出！
 ```
+
 即**返回 string = 报错提示，不插入**；返回 null = 成功。故 handler 必须**自己调 `vd.insertValue()` 插入** markdown，返回 null。
 
 **连带发现**：`insertValue` 是程序化 `range.insertNode`，**不产生 DOM input 事件**（IR 分支还先置 `preventInput=true` 再 insert），故不触发 `options.input`。若不手动补发 `onChange`，「只粘贴图片不打字」永不自动保存 → 刷新丢图。修法：handler 内 insertValue 后，`requestAnimationFrame` 里 `getValue()` 取值并调 `onChangeRef.current?.(value)`（rAF 是等 IR 异步折叠图片节点稳定）。插入前 `vd.focus()` 恢复被文件对话框夺走的选区。
@@ -137,11 +146,13 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 **背景**：附件 E2E 间歇失败（~50%），IDB content 停在空串、图片丢失。
 
 **根因**（debug 逐层实测，推翻多个错误假设）：
+
 1. 先疑「焦点丢失/节流窗口」——改 focus + leading 节流，未根除。
 2. 加实例探针，发现真相：**VditorEditor 被挂载 4 次**（StrictMode 双调用 × EditorPane `if(loading) return` early-return 卸载重挂），上传命中**已 destroy 的陈旧实例**，其 `getValue()="\n"`。
 3. 深层：**Vditor lute 引擎异步加载**，构造后 `after` 回调才渲染 DOM。StrictMode 下 `mount(inst1)→cleanup(inst1)→mount(inst2)`：cleanup 调 `inst1.destroy()` 时 inst1 尚未就绪、destroy 无效；等 inst1 的 lute 加载完，`after` 仍触发，把 inst1 的 DOM（含 file input）渲染进**共享容器** → **僵尸实例**。Playwright 点到僵尸 input，读到空值。
 
 **决策（三重修复）**：
+
 - **实例 DOM 隔离**：每个挂载创建独立 `host` 子元素，`new Vditor(host)`；cleanup 时 `host.remove()` 整个移出文档。僵尸即使 `after` 晚触发，也只渲染进**已脱离文档**的 host，绝不出现在活 DOM、碰不到活实例。（此前「让僵尸自我 destroy」的守卫失败，正因多实例共享 DOM 时 `destroy()` 清空整个容器、连带毁掉活实例。）
 - **EditorPane 不卸载画布**：移除 `if(loading) return` early-return，loading 改 **overlay 覆盖**；VditorEditor 加 `key={noteId}`，只随 noteId 变化重挂（StrictMode 应有的 2 次，不再因 loading 抖动叠加）。
 - **after 僵尸守卫 + destroyed 标志**：cleanup 先置 `destroyed=true`，`after` 发现已销毁则 `vd.destroy()` 并中止渲染。
@@ -157,6 +168,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 **背景**：Pinia → React 状态方案。
 
 **决策**：Zustand 5，三 store 职责不重叠：
+
 - `notesStore`：**唯一触碰 datasource 的地方**（数据真相源），乐观更新 + CRUD 编排。
 - `settingsStore`：主题/编辑器偏好，persist localStorage（`resolvedScheme` 不持久化，运行时重算）。
 - `uiStore`：瞬态 UI（断点/搜索词/过滤/命令面板/确认队列），不持久化。
@@ -183,7 +195,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 
 **背景**：vue-router → react-router 7。响应式双形态（桌面工作台/移动卡片流）。
 
-**决策**：`createBrowserRouter`（data router，提供 loader/action/errorElement）。**不用两套路由**，用 `/n/:noteId` 表达「选中笔记」：桌面右侧内嵌编辑器（URL 同步可刷新保持）；移动点卡片 navigate 到 `/n/:noteId` 全屏编辑，返回键回列表。`basename = import.meta.env.BASE_URL`（GitHub Pages `/claw-clip/`）。
+**决策**：`createBrowserRouter`（data router，提供 loader/action/errorElement）。**不用两套路由**，用 `/n/:noteId` 表达「选中笔记」：桌面右侧内嵌编辑器（URL 同步可刷新保持）；移动点卡片 navigate 到 `/n/:noteId` 全屏编辑，返回键回列表。`basename = import.meta.env.BASE_URL`（由 `PAGES_BASE_PATH` 注入，见 ADR-050）。
 
 **理由**：双形态共享同一数据层与业务 hook，只有布局 JSX 分叉；单一路由避免状态漂移。
 
@@ -196,6 +208,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 **背景**：Vditor/M3E 都是命令式 Web Component（Lit shadow DOM / 异步初始化），组件单测价值低且脆弱。
 
 **决策**：
+
 - **Vitest 重度单测**：data/（原地 upsert 回归、级联删、hydrate/dehydrate、搜索、备份往返、二进制安全）、stores/、hooks/、utils/。用 `fake-indexeddb/auto` + Node 原生 Blob/File（jsdom Blob 无 `arrayBuffer()`）+ `__resetDbSingleton()`（db Promise 单例防串库）。VditorEditor 用 `vi.mock('vditor')` 测**封装契约**，不测 Vditor 内部。
 - **Playwright E2E**：编辑器与 M3E 交互。技巧（实测）：IR 编辑区选择器必须 scope 到 `.vditor-ir .vditor-reset`（IR 模式渲染 4 个 `.vditor-reset`，只有 `.vditor-ir` 下那个可见，否则会匹配到隐藏的 wysiwyg 容器）；M3E shadow DOM Playwright 默认可穿透；token 断言读 `m3e-theme` 元素或其后代（非 documentElement）；用确定性信号（轮询 IDB / waitForFunction textContent）替代固定 sleep。
 
@@ -222,6 +235,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 **背景**：调研/plan 附录的 Vditor 用法含臆造 API，实测逐个纠正。
 
 **实测纠正**：
+
 - **无 `setMode()` 方法**！只有 `getCurrentMode()`。模式切换的正确做法：改 `settingsStore.editorMode` → mount effect 依赖 `[noteId, editorMode]` 触发重建。
 - `setTheme(theme:"dark"|"classic", contentTheme?, codeTheme?, contentThemePath?)` 四参。
 - **setTheme 时序坑**：`this.vditor` 内部对象在 lute 异步加载完（`after` 回调）才就绪，此前调 setTheme 报 `Cannot read properties of undefined (reading 'options')`。修法：`readyRef` 就绪门闩，scheme effect 未就绪则跳过，首屏由 after 里的 syncVditorTheme 兜底。
@@ -236,11 +250,13 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 **背景**：Vditor 的 IR 模式虽然还原 Typora 手感，但带来三重负担：包体大（首屏 ~1.4MB）、命令式生命周期坑多（ADR-007/008/009/015 全在填它的坑）、与「文件夹 + 导入导出 + 可配置印刷预览」的新方向耦合过重。
 
 **决策**：
+
 - 编辑内核换 **CodeMirror 6**（`@codemirror/lang-markdown` + 自定义 HighlightStyle，颜色走 M3E token）。
 - 放弃「即时渲染 IR」，改为**编辑/预览双视图**：源码编辑，预览由独立 markdown-it 管线渲染。
 - 渲染管线（markdown-it / KaTeX / highlight.js）**按需动态 import**，不进入首屏；Mermaid 进一步按图类型拆分懒加载。
 
 **实测约束**：
+
 - **编辑器必须半受控**：`value` 只作为挂载初始文档，父级 state 不回流到 `EditorView`。回流会打断 CJK 组合输入，产生字符乱序（Playwright 可稳定复现）。
 - 切换笔记用 `key={noteId}` 重挂载，而不是 dispatch 替换文档。
 - Playwright `keyboard.type` 输入中文会乱序（CM6 组合输入模拟问题），E2E 统一用 `keyboard.insertText`。
@@ -252,6 +268,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 ## ADR-017 · 文件夹树数据模型：独立 folders store + notes.folderId ✅
 
 **决策**：
+
 - `folders` 独立 object store（`id/name/parentId/timestamps`），扁平存储，UI 递归组树。
 - `notes.folderId?: string | null`；`null`/缺失 = 根目录。旧笔记升级后自然落入根目录，无需迁移脚本。
 - 删除文件夹为**级联删除**（子孙文件夹 + 其下笔记 + 附件），UI 二次确认。
@@ -264,6 +281,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 ## ADR-018 · 预览 / DOCX / PDF 导出共用同一份渲染结果与排版语义 ✅（PDF 实现由 ADR-038 取代）
 
 **决策**：
+
 - 一份 `renderMarkdown()`（markdown-it + 扩展插件 + highlight.js）输出 HTML。
 - DOCX 导出把同一 HTML 交给 DOMParser → `docx` 库，并通过文档默认样式对齐预览的
   字体、字号、标题层级、引用底色、代码块与表头样式。
@@ -283,6 +301,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 **决策**：`pdfjs-dist` 抽取文本项，按 y 坐标聚行、按字号中位数识别标题层级、按行距分段、识别项目符号；输出可继续编辑的 Markdown。
 
 **理由与边界**：
+
 - PDF 是排版产物，没有语义结构；任何方案都无法「真正还原」表格/图片/双栏。
 - 目标定为**可编辑**而非可用版式；PRD 明确列为非目标（不保证保真）。
 - 重型依赖动态 import，避免为低频功能拖慢首屏。
@@ -297,6 +316,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 浏览模式仍能直接写；自动保存防抖，用户不接管。此前实现的「编辑区 + 独立预览页」与 nav rail/分栏被判定为过度设计。
 
 **决策**：
+
 - **布局**：桌面改为「可收侧栏（文档 / 大纲两页签）+ 单主区」，移除 nav rail 与 `M3eSplitPane`；
   移动端保留列表/编辑器整页切换与底部导航。
 - **浏览模式**：不做富文本，也不做 HTML 预览；在 CodeMirror 6 上用**装饰**隐藏非当前行的 Markdown 标记、
@@ -307,6 +327,7 @@ if (typeof isValidate === "string") { vditor.tip.show(isValidate); return; } // 
 - **打印主题**：不再有独立设置页/预览页，入口收进导出菜单的「打印主题…」，只影响打印根与 DOCX。
 
 **代价**：
+
 - 不是完整 WYSIWYG：围栏代码块标记、嵌套强调、脚注等在浏览态仍显示源码（可切编辑模式查看）。
 - 半受控编辑器必须在「载入完成」后才挂载（`loadedId === noteId`），否则空文档挂载后无法回灌。
 
@@ -325,6 +346,7 @@ _（后续 ADR 随 S10 验收与性能优化补充：体积预算、命令面板
 左源码、右实时预览、顶部格式工具栏、导出 MD/HTML/PDF、大纲与明暗主题。
 
 **决策**：
+
 - **放弃轻量 IR**（删除 `markdownIR.ts`），改为三态视图：`edit` / `split` / `preview`；
   桌面默认分屏，移动端默认编辑（`split` 在窄屏退化为 `edit`）。视图选择为会话内瞬态（见 ADR-039，不再持久化）。
 - **实时预览**：复用既有 markdown-it 管线（KaTeX / highlight.js / Mermaid），
@@ -337,6 +359,7 @@ _（后续 ADR 随 S10 验收与性能优化补充：体积预算、命令面板
   避免导出文件依赖 KaTeX 字体或 CDN。
 
 **理由**：
+
 - 源码 + 实时预览的语义最简单：不存在「浏览态还能不能写」「当前行标记何时显隐」这类边缘状态，
   用户永远知道文档真相在哪。
 - markdown-it 管线已经是项目内唯一渲染真相源，实时预览只是把它接到第二个容器，不引入新依赖。
@@ -344,6 +367,7 @@ _（后续 ADR 随 S10 验收与性能优化补充：体积预算、命令面板
 - HTML 导出补齐了「带走」闭环，且与预览同源，避免「预览一套、导出另一套」。
 
 **后果**：
+
 - 失去 Typora 式「光标所在行显源码、其余行渲染」的观感；换来确定、可测、与导出完全同源的预览。
 - 移动端无法左右分屏，预览改为整页切换；这是窄屏的合理退化，不是能力缺失。
 - 首屏仍不加载 markdown-it：只有进入分屏/预览或导出时才动态 import。
@@ -380,6 +404,7 @@ while (node) {
 **决策**：创建 `EditorView` 时显式传 `root: document`，让样式表挂到文档根。
 
 **验证**（实测）：
+
 - 修复前 `.cm-content` 计算样式为 `padding: 0px`、`font-family: Roboto...`；
   修复后为 `padding: 28px 36px`、`font-family: ui-monospace...`。
 - `document` 上出现 CodeMirror 的样式 `<style>`；编辑器焦点描边消失（由主题 `&.cm-focused { outline: none }` 接管）。
@@ -399,6 +424,7 @@ while (node) {
 标题行右侧的「+」。
 
 **决策**：
+
 - **删除收藏概念**：`Note.starred`/`NoteFilter.starred`/`listMode="starred"`/`/starred` 路由、
   `toggleStar`/`setStarred` 数据接口、列表与编辑器星标按钮一并移除；IndexedDB 版本升到 v3，
   升级时删除遗留的 `starred` 索引（字段本身无需迁移）。
@@ -433,6 +459,7 @@ while (node) {
 按钮改到主内容顶栏左侧。
 
 **决策**：
+
 - **移除搜索**：删除 `/search` 路由、`SearchPage`、移动端底部导航（`Nav.tsx`/`M3eNavBar`）、
   `uiStore.listMode`/`keyword` 与 `setFilter` 残留；扁平列表组件 `NoteList` 一并删除。
   `notesStore` 不再维护 `summaries/total/loading/load`，只保留 `treeNotes` 作为侧栏投影。
@@ -465,6 +492,7 @@ while (node) {
 与文件夹/笔记列表分成两块。
 
 **决策**：
+
 - **笔记行两行结构**：第一行 `标题 + relativeTime(updatedAt)`，第二行 `NoteSummary.excerpt`
   单行省略。摘要复用保存时写入的 `excerpt`（`stripMarkdown` + 空白折叠 + 80 字上限），
   不额外读取正文；渲染前剥掉 excerpt 开头与标题重复的部分（`notePreview`），避免
@@ -493,6 +521,7 @@ while (node) {
 列表最前面，排序被「浏览行为」污染。
 
 **决策**：
+
 - **保存前做真实变更检测**：`saveNote(id, patch)` 先算出 content/title/tags/folderId/pinned
   的最终值，与缓存中的 Note 逐项比较；全部相同则直接返回，不写库、不刷新 `updatedAt`。
 - **标题只在必要时派生**：仅当正文真实变化时才 `deriveTitle(content)`；无改动的保存保留
@@ -519,6 +548,7 @@ openNote 不刷新 4 例）；`pnpm run test:e2e` 30 例全绿（新增「仅打
 按钮、禁止嵌套，并支持把笔记拖入/拖出文件夹。
 
 **决策**：
+
 - **去箭头、整行开合**：删除 `.tree-twisty` 与名称按钮，文件夹行本身承担 `role="button"`；
   单击切换开合，`folder` / `folder_open` 图标即状态。展开时把该文件夹设为新建位置；收起
   当前选中文件夹时新建位置回到顶层。
@@ -552,6 +582,7 @@ openNote 不刷新 4 例）；`pnpm run test:e2e` 30 例全绿（新增「仅打
 一条完整的顶部导航。
 
 **决策**：
+
 - 在侧栏最上方增加 `.sidebar-brand` 行：左侧 `ClawClip` 文字（取 `globalConfig.appName.en`），
   右侧 GitHub 品牌 SVG 图标；整行 `min-height: 56px`，与主内容顶栏同高。
 - GitHub 图标是 `<a target="_blank" rel="noopener noreferrer">`，地址取
@@ -574,6 +605,7 @@ openNote 不刷新 4 例）；`pnpm run test:e2e` 30 例全绿（新增「仅打
 **背景**：文件夹此前按名称排序，用户无法按自己的使用频率/习惯调整顺序。
 
 **决策**：
+
 - `Folder` 增加可选 `order?: number`；`loadFolders()` 把旧数据按现有顺序/名称兜底排序后
   压成连续 `0..n-1` 并回写，之后按 `order` 升序展示。
 - `createFolder()` 取现有最大 order + 1，追加到末尾（不再按名称插入）。
@@ -602,6 +634,7 @@ openNote 不刷新 4 例）；`pnpm run test:e2e` 30 例全绿（新增「仅打
 直观反馈。
 
 **决策**：
+
 - `.sidebar-brand-name` 优先使用等宽字体栈
   `ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace`。
 - 侧栏底部新增 `SidebarStats`：显示「共 x 个笔记，xxx KB/MB/GB」。
@@ -632,6 +665,7 @@ openNote 不刷新 4 例）；`pnpm run test:e2e` 30 例全绿（新增「仅打
 菜单里，侧栏没有快捷入口。
 
 **决策**：
+
 - 底部改为 `.sidebar-footer` 横条：`display:flex`、上下 padding、顶部 outline 分隔线。
 - 左侧 `.sidebar-stats` 做成圆角胶囊（`surface-container-high` 背景）：数据库图标 +
   「共 x 个笔记」+ 弱化圆点 + 高亮尺寸；数字使用 `tabular-nums`。
@@ -657,6 +691,7 @@ M3E token、编辑器与预览。
 **背景**：品牌行只有等宽文字 `ClawClip` 和 GitHub 图标，缺少与网站 favicon 一致的视觉标识。
 
 **决策**：
+
 - 在标题左侧加入 `<img className="sidebar-logo" src={import.meta.env.BASE_URL + "favicon.ico"}>`，
   24×24、`object-fit: contain`，作为装饰性图片（`alt=""`）。
 - favicon 是单色黑标；暗色主题下通过 `data-dark` + `filter: invert(1)` 反相为白色，
@@ -673,7 +708,6 @@ logo 更简单，也不会引入额外请求之外的资源。
 全绿（E2E 断言 logo 可见、src 指向 favicon，并随主题切换 `data-dark`）；浅色/深色截图确认
 logo、等宽标题与底部 bar 的视觉关系。
 
-
 ---
 
 ## ADR-033 · 编辑器支持手写 HTML，不做 XSS 过滤 ✅
@@ -682,6 +716,7 @@ logo、等宽标题与底部 bar 的视觉关系。
 用户无法在文档中直接写 HTML（自定义布局、`<details>`、带 class 的容器等）。
 
 **决策**：
+
 - markdown-it 改为 `html:true`，原始 HTML 原样进入预览、HTML 导出与 PDF 渲染。
 - 不引入 DOMPurify/sanitize-html，也不过滤 `script` 标签或事件属性。
 
@@ -689,6 +724,7 @@ logo、等宽标题与底部 bar 的视觉关系。
 本人浏览器内呈现；过滤会破坏用户手写 HTML 的语义与能力。
 
 **风险与边界**：
+
 - 导入**不可信**的 `.md` / `.docx` / `.pdf` 后，预览中的内联事件（如 `onerror`）可能执行；
   这是用户明确要求并接受的取舍。
 - `innerHTML` 插入的 `<script>` 通常不会执行，但事件属性会；不要把该渲染结果嵌入任何
@@ -708,6 +744,7 @@ logo、等宽标题与底部 bar 的视觉关系。
 仓库体积与 IndexedDB 占用都需要可回收的附件生命周期。
 
 **决策**：
+
 - `BlobRecord` 新增 `refCount`，语义是**引用该附件的笔记数**；同一笔记内多处引用只算 1。
 - `LocalDataSource.upsertNote` 在 notes+blobs 的**同一 readwrite 事务**里比对新旧正文引用
   差集：新增 +1、移除 -1；`deleteNote` 在删除笔记的同一事务里递减其全部引用。
@@ -737,6 +774,7 @@ logo、等宽标题与底部 bar 的视觉关系。
 用户希望标题不携带图标，并能在需要时快速确认当前运行的是哪一次提交。
 
 **决策**：
+
 - 移除 `sidebar-logo` 图片及其 `data-dark` 反相 CSS，品牌行只保留等宽 `ClawClip`
   标题与右侧 GitHub 图标。
 - 标题改为 `<button data-testid="sidebar-title">`：首次点击显示当前 commit hash 的
@@ -765,6 +803,7 @@ logo、等宽标题与底部 bar 的视觉关系。
 文末换行；手工整理成本高，且不同来源的写法让源码看起来杂乱。需要一键校准。
 
 **决策**：
+
 - 顶栏「更多」菜单**第一项**加入「格式化」（`data-testid="menu-format"`），作用于整篇文档，
   不依赖当前选区。
 - 新增纯函数 `src/utils/markdownFormat.ts::formatMarkdown()`，幂等，只做语义安全校准：
@@ -793,6 +832,7 @@ logo、等宽标题与底部 bar 的视觉关系。
 两套形态的功能差距过大。
 
 **决策**：
+
 - 删除笔记改为 `M3eDialog`：菜单点击只打开确认框（`delete-note-dialog`），
   取消/确认分别走 `delete-note-cancel` / `delete-note-confirm`；确认后执行 `remove(noteId)`
   并离开已失效路由。文案明确「仅回收只被该笔记引用的附件」（共享附件按引用计数保留）。
@@ -824,6 +864,7 @@ Mermaid 退化成代码，图片被固定成 480×320；PDF 用 html2canvas 整�
 产物是不可选中/搜索的图片，分页还会从段落中间切断。用户要求三种格式都能「带走后成立」。
 
 **决策**：
+
 - **共用自包含预处理** `prepareExportHtml()`：解析导出副本 → 附件 `blob:`/`http(s):`
   经 `blobToBase64()` 转 data URL → Mermaid 渲染。只处理导出副本，预览仍用 object URL。
 - **HTML**：Mermaid 渲染为内联 SVG（`utils/mermaid.ts`，与预览共用同一套逻辑），
@@ -868,6 +909,7 @@ Mermaid 退化成代码，图片被固定成 480×320；PDF 用 html2canvas 整�
 纯属噪音。
 
 **决策**：
+
 - **视图改为瞬态**：`viewMode` 从 `Settings` / localStorage 移入 `uiStore`，默认 `null` 表示「未手动选择」，
   由 `defaultViewMode(isDesktop)` 解析（桌面 `split`、移动 `edit`）。刷新页面即回到默认值；
   SPA 内切笔记、开合侧栏仍保留本次手动选择。
@@ -894,6 +936,7 @@ E2E 增加「刷新后重置」「移动端默认仅编辑且无分屏入口」�
 编辑器「更多」菜单与仅预览时的工具行也是瞬间显隐。用户要求补齐这些过渡。
 
 **决策**：
+
 - **统一的「退场保持」机制**：新增 `hooks/usePresence(visible, exitMs)`，把「是否挂载」与
   「进入/退场状态」拆开。条件渲染的元素在关闭后延迟 `exitMs` 卸载，期间渲染
   `data-state="closing"` 播放退出关键帧。用于侧栏、更多菜单、预览面板。
@@ -932,6 +975,7 @@ E2E 的「预览时工具行不存在」改为断言 `md-toolbar-slot[data-hidde
 浏览器会直接用文件替换当前页面，把未落库的编辑状态顶掉。
 
 **决策**：
+
 - **投放目标**：`NoteTree`（只在侧栏「文档」页签渲染）。文件悬停时整块树区域显示虚线高亮
   遮罩「松开以导入并打开 · Markdown / DOCX / PDF」；「大纲」页签不接收文件。
 - **白名单单一来源**：`exchange.ts` 导出 `IMPORT_EXTENSIONS / IMPORT_ACCEPT /
@@ -960,6 +1004,7 @@ E2E 覆盖「树区域拖入 md → 新建并打开」与「拖到已有笔记�
 Enter 或失焦结束，鼠标用户没有明确的确认/取消出口。行内两个常驻语义动作也让窄侧栏更拥挤。
 
 **决策**：
+
 - **三点按钮 + popover**：文件夹行悬停/聚焦时只显示 `more_horiz`，点击弹出 176px 菜单
   （重命名 / 删除，删除为危险色）。菜单用 `createPortal` 挂到 `.app-shell`：
   既继承 `m3e-theme` 的 CSS token，又避开 `.sidebar-panel` 入场动画 `transform` 建立的
@@ -978,12 +1023,12 @@ Enter 或失焦结束，鼠标用户没有明确的确认/取消出口。行内�
 **后果**：E2E 需要先打开菜单再点重命名/删除；新增断言覆盖「菜单两项」「重命名态隐藏三点」
 「✓ 落库」「✕ 不落库并恢复」。菜单为固定定位，打开后滚动会自动关闭（可接受）。
 
-
 ---
 
 ## ADR-043 · 大纲跳转：以当前视图为落点，并即时重解析目标位置 ✅
 
 **背景**：两个相互独立的问题让「点大纲跳标题」不够可靠：
+
 1. 侧栏大纲由 `value` 防抖 120ms 派生，跳转却直接用条目里的旧 `pos`（字符偏移）。
    期间只要正文变长（粘贴、连续输入，尤其是上传附件插入的
    `![名称](clawclip://blob/…)` 引用），所有标题偏移都会整体后移，点击就落到错行——
@@ -992,6 +1037,7 @@ Enter 或失焦结束，鼠标用户没有明确的确认/取消出口。行内�
    焦点和光标被塞进看不见的地方，预览面板纹丝不动。
 
 **决策**：
+
 - **点击时重解析**：`OutlinePane` 在点击时取编辑器**实时正文**（`getActiveEditorValue()`，
   不是 React state），同步跑一次 `extractOutline()`，再用 `resolveOutlineTarget()`
   按「序号 → 级别+文本 → 同序号同级别」三级校验找回对应标题，用新的 `pos` 跳转。
@@ -1030,6 +1076,7 @@ Enter 或失焦结束，鼠标用户没有明确的确认/取消出口。行内�
 ## ADR-044 · 选中态压过活动行底色；选中后敲标记自动包裹 ✅
 
 **背景**：
+
 1. 光标行高亮用 `.cm-activeLine::before` 铺满整行全宽，为了压住正文/行号，给
    `.cm-activeLine` 加了 `z-index: 0`。这会让每一行都成为层叠上下文，
    而 CodeMirror 的选择层（`.cm-selectionLayer`）是 `z-index: -1`——
@@ -1038,6 +1085,7 @@ Enter 或失焦结束，鼠标用户没有明确的确认/取消出口。行内�
    「给这段字加斜体/公式」，而不是「用星号覆盖这段话」。
 
 **决策**：
+
 - **把行底色压到选择层之下**：`.cm-activeLine` 只保留 `position: relative`
   （定位 `::before` 所需），不再设 `z-index`（否则整行成为层叠上下文，行底色被锁在
   选择层之上）；`::before` 的 `z-index` 取 `-100`。CodeMirror 给各 layer 写的是
@@ -1097,6 +1145,7 @@ E2E 覆盖「敲 `*` 得到 `*hello*` 且内文仍选中」「连敲逐层加标
 渲染成普通引用，`[!NOTE]` 原样显示，既不好看也不符合原文语义。
 
 **决策**：
+
 - **自建 core 规则，不引入依赖**：在 `inline` 之后重写 token 流——找到块引用第一段开头的
   标记，把 `blockquote_open/close` 的 tag 改成 `div` 并挂 `md-alert md-alert-<type>`，
   再插入一个 `md-alert-title` 段落（标题文案取类型名 `Note` / `Tip` / …）。
@@ -1127,14 +1176,15 @@ DOCX 往返导出后正文与标题仍在。
 同时承载用量、云同步、图床与备份四类操作。
 
 **决策**：
+
 - **入口与挂载**：`SidebarStats` 的 `div` 改为 `button`（保留 testid 与文本），点击写
   `uiStore.storageDialogOpen`；`StorageDialog` 挂在 `AppShell` 而不是 `SidebarBody`——
   既不受移动端 `.note-list-pane { zoom: 1.12 }` 影响，也不会因侧栏收起/断点切换被卸载。
   尺寸走 M3E 的 `--m3e-dialog-min/max-width`、`--m3e-dialog-max-height` 变量。
 - **三种数字分开展示**：`data/storageReport.ts` 同时给出
-  1) 本应用数据（notes/folders/blobs/meta 的 JSON 字节 + 附件二进制，近似值）；
-  2) IndexedDB 实际占用（`navigator.storage.estimate().usageDetails.indexedDB`）；
-  3) 整站用量 / 配额。三者语义不同，UI 用文案明确区分，不再混成一个「占用」。
+  1. 本应用数据（notes/folders/blobs/meta 的 JSON 字节 + 附件二进制，近似值）；
+  2. IndexedDB 实际占用（`navigator.storage.estimate().usageDetails.indexedDB`）；
+  3. 整站用量 / 配额。三者语义不同，UI 用文案明确区分，不再混成一个「占用」。
 - **排行不重复计算**：附件归属以**笔记正文**的 `clawclip://` 引用为准（`attachmentIds`
   可能是陈旧索引）；共享附件在笔记排行中按 `size / 引用笔记数` 均摊，附件排行里每条只出现
   一次。恒等式 `Σ笔记 + 孤儿 + 文件夹 + 附件元数据 + meta = appBytes` 由单测锁定。
@@ -1165,6 +1215,7 @@ DOCX 往返导出后正文与标题仍在。
   无需任何后端。选择这条。
 
 **决策**：
+
 - **手动全量快照，不做自动合并**：推送 = 覆盖 gist 中单个 `clawclip-backup.json`；
   拉取先取回并校验，再由用户显式选择「合并（按 `updatedAt` 较新者胜）」或
   「覆盖（`replaceAll()` 单事务清空 + 写入）」。没有删除墓碑、版本向量与自动冲突解决。
@@ -1199,6 +1250,7 @@ base64、缓存复用、超限剔除与孤儿附件；E2E 用 `page.route` mock 
 提供无鉴权、CORS 放开的免费图床（`POST /api/v1.php`，multipart 字段 `image`）。
 
 **决策**：
+
 - **默认本地**，在「存储空间 → 图床」显式切到 `img.scdn.io` 才生效；只影响之后的粘贴/
   拖入，已有附件与外链不迁移。
 - **失败回退**：上传失败（网络、413、429、返回异常）时回退 `saveBlob` + `clawclip://`，
@@ -1227,6 +1279,7 @@ E2E 覆盖切换目标、成功写外链（`blobs` 计数为 0）、失败回退
 到几分钟（图床 5 次/5 秒），需要一个明确的阻塞式进度，避免用户误以为卡死而刷新。
 
 **决策**：
+
 - **方向跟随当前上传目标**：一个「全部迁移到当前目标」入口。目标为 `img.scdn.io` 时，
   把所有被正文引用的本地图片上传并把引用改成外链；目标为本地时，把所有 Markdown/HTML
   外链图片下载进 IDB 并改成 `clawclip://`。迁移不改变远端图片（也没有删除权限）。
@@ -1259,3 +1312,22 @@ E2E 覆盖切换目标、成功写外链（`blobs` 计数为 0）、失败回退
 复用与重复执行不重复下载；`taskProgressStore.spec.ts` 覆盖任务互斥与只接受当前任务更新；`speed.spec.ts` 覆盖滑动窗口、样本不足与衰减；
 E2E 覆盖「上传期间进度浮层可见且 Esc 无法关闭」「全部上传后正文写外链且 blob 归零」
 「全部下载后正文写 `clawclip://` 且 blob 落库」。
+
+## ADR-050 · 路线对齐：Vite+ 工具链与 `PAGES_BASE_PATH` 注入 ✅
+
+**背景**：项目形态是纯前端 SPA + GitHub Pages，与 `node-app-starter` 的 node-page 路线一致；但实现上偏离了路线不变量：构建/检查直接调 `vite` 与 `tsc`（没有 `vp check`）、`base` 硬编码 `/claw-clip/`（自定义域或用户页会白屏）、字体在 CSS 里再硬编码一遍 base、缺 `public/.nojekyll`、CI 用浮动 `@main` action 且未自动开通 Pages。
+
+**决策**：
+
+- 构建、检查、测试统一交给 **Vite+（vp）**：`vp dev / build / preview / check / test`；`vite` 依赖通过 pnpm catalog 对齐到 `@voidzero-dev/vite-plus-core`。
+- `base = process.env.PAGES_BASE_PATH || "/"`，代码不推断仓库名；CI 里项目页默认 `/<repo>/`，用户页/自定义域由仓库变量设为 `/`。
+- Material Symbols 字体从 `public/fonts` 迁入 `src/assets/fonts`，CSS 用相对路径引用，Vite 自动输出带 hash 的资源并加 base 前缀。
+- 补 `public/.nojekyll`；构建脚本本地也复制 `404.html`，使 `preview` 的深链接刷新与线上一致。
+- CI 改用 `voidzero-dev/setup-vp@v1.21.2`（Node 版本读 `.nvmrc`），加 `vp check` / `vp test run` / E2E 门禁；Actions 升到 `checkout@v7`、`configure-pages@v6`（`enablement: true`）、`upload-pages-artifact@v5`、`deploy-pages@v5`，并开启 `include-hidden-files: true` 以保留 `.nojekyll`。
+- `@types/node` 与运行时 major 对齐到 24。
+
+**理由**：路线不变量决定了部署形态的可移植性。硬编码 base 让站点只能在「仓库名恰好是 claw-clip 的项目页」这一种形态下工作；字体再硬编码一次则让改 base 变成双点同步。vp 把格式、lint、类型收敛为一条命令，CI 与本地使用同一入口，避免「本地过、CI 挂」的工具差异。
+
+**后果**：`vite.config.ts` / `vitest.config.ts` 从 `vite-plus` 导入 `defineConfig`；单测从 `vite-plus/test` 导入断言 API；`pnpm-workspace.yaml` 增加 `catalog`、`overrides` 与 `peerDependencyRules` 来对齐 vite/vitest。`vp check --fix` 对全仓做了一次格式化，产生一次性格式 diff。E2E 的 baseURL 改为读取同一个 `PAGES_BASE_PATH`。
+
+**验证**：`vp check` 全绿（138 文件格式 + 122 文件 lint）；`vp test run` 27 文件 / 299 例通过；`pnpm run build` 成功且 `dist/` 含 `index.html`、`assets/`、`.nojekyll`、`404.html`；无环境变量时资源前缀为 `/`，`PAGES_BASE_PATH=/claw-clip/` 时变为 `/claw-clip/`。

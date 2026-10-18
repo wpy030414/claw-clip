@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { formatDate, formatDateTime, relativeTime } from "@/utils/time";
 
 const NOW = new Date(2026, 9, 17, 12, 0, 0).getTime();

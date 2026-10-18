@@ -1,7 +1,7 @@
 /**
  * GitHub Gist 同步单测（mock fetch）：API 形状、截断处理、错误映射与白名单序列化。
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   CloudSyncError,
   GIST_FILENAME,
@@ -24,7 +24,11 @@ function snapshotPayload(): BackupPayload {
   };
 }
 
-function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
@@ -185,8 +189,8 @@ describe("pullSnapshot", () => {
 
     const result = await pullSnapshot({ token: "ghp_secret", gistId: "g1" });
     expect(result.payload.notes).toHaveLength(1);
-    const rawCall = (fetchMock.mock.calls as unknown as Array<[string, RequestInit]>).find(([url]) =>
-      url.startsWith("https://gist.githubusercontent.com/"),
+    const rawCall = (fetchMock.mock.calls as unknown as Array<[string, RequestInit]>).find(
+      ([url]) => url.startsWith("https://gist.githubusercontent.com/"),
     )!;
     const headers = (rawCall[1].headers as Record<string, string> | undefined) ?? {};
     expect(headers.Authorization).toBeUndefined();

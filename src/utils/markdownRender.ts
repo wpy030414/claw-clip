@@ -112,9 +112,7 @@ function githubAlerts(md: MarkdownItInstance): void {
       titleOpen.attrSet("class", "md-alert-title");
       const titleInline = new state.Token("inline", "", 0);
       titleInline.content = title;
-      titleInline.children = [
-        Object.assign(new state.Token("text", "", 0), { content: title }),
-      ];
+      titleInline.children = [Object.assign(new state.Token("text", "", 0), { content: title })];
       const titleClose = new state.Token("paragraph_close", "p", -1);
 
       const rest = inline.content.slice(match[0].length);

@@ -50,7 +50,7 @@ function trackWrite<T>(promise: Promise<T>): Promise<T> {
 
 async function drainWrites(): Promise<void> {
   while (pendingWrites.size > 0) {
-    await Promise.allSettled([...pendingWrites]);
+    await Promise.allSettled(pendingWrites);
   }
 }
 
@@ -165,11 +165,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
     const contentChanged = content !== cur.content;
     // 只有正文变化时才重新派生标题；否则保留原标题，避免「打开再关闭」改动手动标题
     const title =
-      patch.title !== undefined
-        ? patch.title
-        : contentChanged
-          ? deriveTitle(content)
-          : cur.title;
+      patch.title !== undefined ? patch.title : contentChanged ? deriveTitle(content) : cur.title;
     const tags = patch.tags ?? cur.tags;
     const folderId = patch.folderId !== undefined ? patch.folderId : cur.folderId;
     const pinned = patch.pinned !== undefined ? patch.pinned : cur.pinned;
@@ -374,9 +370,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
     const next = ordered.map((f, i) => (f.order === i ? f : { ...f, order: i }));
     set({ folders: next, revision: get().revision + 1 });
     await Promise.all(
-      next
-        .filter((f) => previous.get(f.id) !== f.order)
-        .map((f) => datasource.upsertFolder(f)),
+      next.filter((f) => previous.get(f.id) !== f.order).map((f) => datasource.upsertFolder(f)),
     );
   },
 

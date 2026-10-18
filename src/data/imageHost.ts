@@ -186,7 +186,12 @@ export async function uploadToScdn(
         lastError = new ImageUploadError("图床限流（5 次/5 秒），请稍后重试", "rate_limit");
         if (attempt === 0) {
           const retryAfter = Number(res.header("retry-after"));
-          await sleep(Math.min(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000, 10_000));
+          await sleep(
+            Math.min(
+              Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000,
+              10_000,
+            ),
+          );
           continue;
         }
         throw lastError;
@@ -197,9 +202,13 @@ export async function uploadToScdn(
         throw lastError;
       }
 
-      const json = (await res.json().catch(() => null)) as
-        | { success?: boolean; url?: string; error?: string; message?: string; data?: { url?: string } }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean;
+        url?: string;
+        error?: string;
+        message?: string;
+        data?: { url?: string };
+      } | null;
       const url = json?.data?.url ?? json?.url ?? "";
       if (json?.success !== true || !url) {
         throw new ImageUploadError(json?.error || json?.message || "图床返回数据异常", "invalid");
@@ -215,7 +224,10 @@ export async function uploadToScdn(
         throw error;
       }
       const aborted = (error as Error | undefined)?.name === "AbortError";
-      lastError = new ImageUploadError(aborted ? "图床连接超时" : "图床网络异常", aborted ? "timeout" : "network");
+      lastError = new ImageUploadError(
+        aborted ? "图床连接超时" : "图床网络异常",
+        aborted ? "timeout" : "network",
+      );
       if (attempt === 0) continue;
       throw lastError;
     }

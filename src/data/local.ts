@@ -117,9 +117,7 @@ export class LocalDataSource implements DataSource {
 
   async upsertFolder(folder: Folder): Promise<Folder> {
     const next: Folder = { ...folder, updatedAt: Date.now() };
-    await withTx(foldersStore, "readwrite", (tx) =>
-      idbReq(tx.objectStore(foldersStore).put(next)),
-    );
+    await withTx(foldersStore, "readwrite", (tx) => idbReq(tx.objectStore(foldersStore).put(next)));
     return next;
   }
 

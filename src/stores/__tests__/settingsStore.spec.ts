@@ -2,7 +2,7 @@
  * settingsStore 单测：主题偏好 + 编辑器偏好的纯逻辑分支。
  * persist 落 localStorage 由 zustand middleware 保证，此处测 action 逻辑。
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { DEFAULT_SETTINGS } from "@/types/settings";
 

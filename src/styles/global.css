@@ -1,4 +1,4 @@
-/* 全局重置 + 基础排版。字体自托管在 S1 后续补 public/fonts，此处先用系统字体栈兜底。 */
+/* 全局重置 + 基础排版。图标字体见 fonts.css；正文优先系统字体栈。 */
 * {
   margin: 0;
   padding: 0;
@@ -7,8 +7,8 @@
 
 :root {
   font-family:
-    Roboto, Inter, "Helvetica Neue", Helvetica, "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+    Roboto, Inter, "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
   line-height: 1.5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;

@@ -5,14 +5,13 @@
  * M3E 的 <m3e-icon>/<m3e-icon-button> 靠 font-family "Material Symbols Outlined" 渲染图标，
  * 但 @m3e 包内不含字体文件，官方示例走 fonts.googleapis.com CDN。
  * 本项目「本地优先」（字体与依赖全部自托管），且 Google Fonts 在中国境内不可达，
- * 故把 woff2 提取入 public/fonts 并在此声明 @font-face。
+ * 故把 woff2 放入 src/assets/fonts 并在此声明 @font-face。
  *
  * M3E icon 默认 variant="outlined" → 对应 "Material Symbols Outlined"。
  *
- * ⚠️ 路径说明：Vite 对 CSS 中以 `/` 开头的 url() 视为 public 绝对路径，
- * **不会**自动加 base 前缀（这是 Vite 已知行为，CSS 里也无法用 import.meta.env）。
- * 故此处硬编码 `/claw-clip/`，必须与 vite.config.ts 的 base 保持一致；
- * 若将来改 base，需同步改此处。woff2 放 public/fonts（大文件不参与打包）。
+ * 路径说明：woff2 放在 src/assets/fonts，用**相对路径**引用。
+ * Vite 会把它当构建资源处理，自动加 base 前缀并输出到 dist/assets ——
+ * 这样 base 改由 PAGES_BASE_PATH 注入时，这里无需同步修改。
  */
 
 /* Material Symbols Outlined —— M3E 图标默认字体 */
@@ -21,7 +20,7 @@
   font-style: normal;
   font-weight: 100 700; /* variable font 全字重区间 */
   font-display: block; /* 图标字体不 block 会先渲染成方块文字，故阻塞至加载完成 */
-  src: url("/claw-clip/fonts/material-symbols-outlined.woff2") format("woff2");
+  src: url("../assets/fonts/material-symbols-outlined.woff2") format("woff2");
 }
 
 /* 图标字形的基础渲染约定（对齐 Google 官方 Material Symbols CSS） */

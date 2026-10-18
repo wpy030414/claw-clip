@@ -1,7 +1,7 @@
 /**
  * 备份文件序列化/校验单测。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { backupFilename, parseBackupPayload, serializeBackup } from "@/data/backupFile";
 import type { BackupPayload } from "@/types/backup";
 import { makeNote } from "@/test/factories";
@@ -43,10 +43,12 @@ describe("parseBackupPayload", () => {
 
   it("拒绝非法 JSON / 版本不符 / 缺字段", () => {
     expect(() => parseBackupPayload("not json")).toThrow("JSON");
-    expect(() => parseBackupPayload(JSON.stringify({ schemaVersion: 1, notes: [], blobs: [] }))).toThrow(
-      "版本",
-    );
-    expect(() => parseBackupPayload(JSON.stringify({ schemaVersion: 2, notes: [], blobs: [] }))).not.toThrow();
+    expect(() =>
+      parseBackupPayload(JSON.stringify({ schemaVersion: 1, notes: [], blobs: [] })),
+    ).toThrow("版本");
+    expect(() =>
+      parseBackupPayload(JSON.stringify({ schemaVersion: 2, notes: [], blobs: [] })),
+    ).not.toThrow();
     expect(() =>
       parseBackupPayload(JSON.stringify({ schemaVersion: 2, notes: [{ id: "x" }], blobs: [] })),
     ).toThrow("缺少 title");

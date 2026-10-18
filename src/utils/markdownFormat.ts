@@ -79,9 +79,7 @@ function normalizeLine(line: string): string {
 export function formatMarkdown(source: string): string {
   if (!source.trim()) return "";
 
-  const normalized = source
-    .replace(/^﻿/, "")
-    .replace(/\r\n?/g, "\n");
+  const normalized = source.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
 
   const out: string[] = [];
   let fence: string | null = null; // 当前所在围栏代码块的标记字符（` 或 ~）

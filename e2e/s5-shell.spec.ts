@@ -165,8 +165,9 @@ test("大纲跳转：编辑/分屏落编辑器，仅预览滚动预览面板", a
   const sampleScrollTop = (selector: string) =>
     page.evaluate((sel) => {
       const el = document.querySelector<HTMLElement>(sel);
-      const store = ((window as unknown as { __scrollSamples?: Record<string, number[]> })
-        .__scrollSamples ??= {});
+      const store = ((
+        window as unknown as { __scrollSamples?: Record<string, number[]> }
+      ).__scrollSamples ??= {});
       const samples: number[] = (store[sel] = []);
       if (!el) return;
       const started = performance.now();
