@@ -94,3 +94,54 @@ describe("extractOutline", () => {
     expect(extractOutline(src).map((i) => i.text)).toEqual(["引用标题", "列表标题"]);
   });
 });
+
+describe("GitHub 警报框", () => {
+  it("NOTE：渲染为警报容器 + 标题，标记不残留", () => {
+    const html = renderMarkdown("> [!NOTE]\n> 这是注意事项。");
+    expect(html).toContain('<div class="md-alert md-alert-note">');
+    expect(html).toContain('<p class="md-alert-title">Note</p>');
+    expect(html).toContain("<p>这是注意事项。</p>");
+    expect(html).not.toContain("[!NOTE]");
+  });
+
+  it("五种类型都识别，并带各自的类型类名", () => {
+    const cases: Array<[string, string]> = [
+      ["NOTE", "note"],
+      ["TIP", "tip"],
+      ["IMPORTANT", "important"],
+      ["WARNING", "warning"],
+      ["CAUTION", "caution"],
+    ];
+    for (const [marker, type] of cases) {
+      const html = renderMarkdown(`> [!${marker}]\n> 内容`);
+      expect(html).toContain(`md-alert md-alert-${type}`);
+      expect(html).toContain(`md-alert-title`);
+      expect(html).not.toContain(`[!${marker}]`);
+    }
+  });
+
+  it("同一行可以写正文；标记后没有正文时只渲染标题", () => {
+    expect(renderMarkdown("> [!TIP] 同一行内容")).toContain("<p>同一行内容</p>");
+    const bare = renderMarkdown("> [!NOTE]");
+    expect(bare).toContain('<p class="md-alert-title">Note</p>');
+    expect(bare).not.toContain("<p></p>");
+  });
+
+  it("多段正文保持在同一个警报框内", () => {
+    const html = renderMarkdown("> [!WARNING]\n>\n> 第一段\n>\n> 第二段");
+    expect(html.match(/md-alert md-alert-warning/g)).toHaveLength(1);
+    expect(html).toContain("<p>第一段</p>");
+    expect(html).toContain("<p>第二段</p>");
+  });
+
+  it("普通引用、以及不在首段开头的标记不受影响", () => {
+    expect(renderMarkdown("> 普通引用")).toContain("<blockquote>");
+    const later = renderMarkdown("> 前言\n>\n> [!NOTE]\n> 内容");
+    expect(later).not.toContain("md-alert");
+    expect(later).toContain("<blockquote>");
+  });
+
+  it("标记大小写不敏感", () => {
+    expect(renderMarkdown("> [!note] 小写")).toContain("md-alert md-alert-note");
+  });
+});

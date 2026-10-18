@@ -23,12 +23,30 @@ import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
-import { buildCommand, type MarkdownCommand } from "./markdownCommands";
+import { buildCommand, markerFromInput, wrapSelection, type MarkdownCommand } from "./markdownCommands";
 
 /** 在 EditorView 上执行一次 Markdown 命令；返回是否产生了改动。 */
 function runInView(view: EditorView, command: MarkdownCommand): boolean {
   const { from, to } = view.state.selection.main;
   const { changes, selection } = buildCommand(view.state.doc.toString(), from, to, command);
+  if (changes.length === 0) return false;
+  view.dispatch({
+    changes,
+    selection: { anchor: selection.anchor, head: selection.head },
+    scrollIntoView: true,
+  });
+  return true;
+}
+
+/**
+ * 选中文本后直接敲 Markdown 标记 → 包裹选区（而不是把选中内容替换掉）。
+ *
+ * 支持的标记：`*`（斜体）、`_`（斜体）、`~`（删除线/下标）、`` ` ``（行内代码）、
+ * `$`（行内公式）、`^`（上标）、`=`（连敲两次为 `==高亮==`）。
+ * 包裹后内文仍保持选中，所以连敲两次 `*` 会得到 `**…**`（加粗），连敲两次 `$` 得到 `$$…$$`。
+ */
+function wrapAt(view: EditorView, from: number, to: number, marker: string): boolean {
+  const { changes, selection } = wrapSelection(view.state.doc.toString(), from, to, marker);
   if (changes.length === 0) return false;
   view.dispatch({
     changes,
@@ -98,16 +116,24 @@ function themeExtension(fontSize: number) {
       caretColor: "var(--md-sys-color-primary)",
       maxWidth: "860px",
       margin: "0 auto",
+      // CJK 字体没有 italic 面，Chrome 默认不给回退字体合成倾斜；
+      // 显式开启后 `*斜体*` 的中文才真正「斜」起来（属性可继承）。
+      fontSynthesis: "style",
     },
     // 光标所在行：用 M3 surface 层色贯穿整行（含行号列与两侧留白）。
     // 正文内容有 860px 的阅读宽度上限、两侧可能是 auto margin，
     // 直接给 .cm-line 铺底只会覆盖文本列；改用绝对定位伪元素向左右各
     // 延伸 100vw，再由 .cm-scroller 的 overflow-x: clip 裁到可视区域。
+    // 不设 z-index：一旦创建层叠上下文，行内 ::before 背景会盖到选择层
+    // （选中态背景被活动行底色吃掉），只保留定位所需的 position。
     ".cm-activeLine": {
       position: "relative",
-      zIndex: "0",
       backgroundColor: "transparent",
     },
+    // z-index 必须低于选择层：CodeMirror 给 `.cm-selectionLayer` 动态写的是
+    // 内联 `-1 - 层序`（实测 -2），行底色若停在 -1 就会盖住选中态。
+    // 行内 pseudo 没有自己的层叠上下文，负值让它退到选择层之下、
+    // 但仍高于滚动容器的背景，文字照常绘制在最上层。
     ".cm-activeLine::before": {
       content: '""',
       position: "absolute",
@@ -116,11 +142,27 @@ function themeExtension(fontSize: number) {
       left: "-100vw",
       right: "-100vw",
       backgroundColor: "var(--md-sys-color-surface-container-high)",
-      zIndex: "-1",
+      zIndex: "-100",
       pointerEvents: "none",
     },
-    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-      backgroundColor: "var(--md-sys-color-secondary-container)",
+    // 选中态：固定青色，与活动行/表面的中性底色形成色相区分。
+    // 不用 `--md-sys-color-primary`：主色是可被用户改成的 seed（默认桃粉），
+    // 与同样带主色倾向的行底色挤在一起就分不出来了。变量定义见 editor.css。
+    // 选择器要压过 CodeMirror 自带主题（后者用 `.cm-scroller > .cm-selectionLayer`），
+    // 所以重复一层 `.cm-selectionBackground` 提权，而不是靠样式注入顺序。
+    ".cm-selectionLayer .cm-selectionBackground": {
+      backgroundColor: "var(--editor-selection-bg-idle, rgba(0, 172, 193, 0.22))",
+      borderRadius: "2px",
+    },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground.cm-selectionBackground": {
+      backgroundColor: "var(--editor-selection-bg, rgba(0, 188, 212, 0.34))",
+      boxShadow: "inset 0 0 0 1px var(--editor-selection-ring, rgba(0, 172, 193, 0.7))",
+      borderRadius: "2px",
+    },
+    // 同词高亮（highlightSelectionMatches）跟随同一色系，不抢选中态
+    ".cm-selectionMatch.cm-selectionMatch": {
+      backgroundColor: "var(--editor-selection-match, rgba(0, 188, 212, 0.14))",
+      borderRadius: "2px",
     },
     ".cm-cursor": { borderLeftColor: "var(--md-sys-color-primary)" },
     "&.cm-focused": { outline: "none" },
@@ -216,6 +258,20 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
               onFilesRef.current?.(files);
               return true;
             },
+          }),
+          // 唯一的拦截点：按「实际落进文档的字符」判断。
+          // 不额外挂 keydown —— 有些环境（输入法/英文键盘）preventDefault 之后
+          // 仍会再派发一次 input，两条路径同时生效就会一次敲出两个标记
+          // （* → **，直接变粗体）。只走输入层，一次按键只加一层。
+          EditorView.inputHandler.of((view, from, to, text) => {
+            if (view.composing) return false;
+            const marker = markerFromInput(text);
+            if (!marker) return false;
+            const { state } = view;
+            if (state.selection.ranges.length !== 1) return false;
+            const sel = state.selection.main;
+            if (from !== sel.from || to !== sel.to || from === to) return false;
+            return wrapAt(view, from, to, marker);
           }),
           themeExtension(fontSize),
         ],

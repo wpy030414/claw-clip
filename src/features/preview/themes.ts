@@ -44,7 +44,10 @@ export const DEFAULT_PREVIEW_CSS = `
 .md-preview-content a { color: var(--md-sys-color-primary, #6750a4); text-decoration: none; }
 .md-preview-content a:hover { text-decoration: underline; }
 .md-preview-content strong { font-weight: 700; }
-.md-preview-content em { font-style: italic; }
+/* 中文没有真正的斜体字形：PingFang SC 等 CJK 字体不带 italic 面，Chrome 在字体族
+   没有斜体面时默认不会为 CJK 合成倾斜（font-style: italic 计算值正确但画面不动）。
+   显式声明 font-synthesis 才会让回退字体也走合成倾斜。 */
+.md-preview-content em { font-style: italic; font-synthesis: style; }
 .md-preview-content del { opacity: 0.65; }
 .md-preview-content mark {
   background: var(--md-sys-color-tertiary-container, #ffd8e4);
@@ -55,6 +58,39 @@ export const DEFAULT_PREVIEW_CSS = `
 .md-preview-content ul, .md-preview-content ol { margin: 0.7em 0; padding-left: 1.7em; }
 .md-preview-content li { margin: 0.28em 0; }
 .md-preview-content li > input[type="checkbox"] { margin-right: 0.5em; accent-color: var(--md-sys-color-primary, #6750a4); }
+/* GitHub 风格警报框：左侧色条 + 同色系浅底 + 圆点标题。
+   颜色用语义色而非主色 seed，保证 NOTE/WARNING 等在任何主题下都可区分；
+   标题文字仍用 on-surface，色条与圆点承担类型标识。 */
+.md-preview-content .md-alert {
+  margin: 1.1em 0;
+  padding: 12px 16px;
+  border-left: 4px solid var(--alert-color, #6750a4);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--alert-color, #6750a4) 9%, transparent);
+}
+.md-preview-content .md-alert > :first-child { margin-top: 0; }
+.md-preview-content .md-alert > :last-child { margin-bottom: 0; }
+.md-preview-content .md-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 0.45em;
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface, #1d1b20);
+}
+.md-preview-content .md-alert-title::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--alert-color, #6750a4);
+}
+.md-preview-content .md-alert-note { --alert-color: #0969da; }
+.md-preview-content .md-alert-tip { --alert-color: #1a7f37; }
+.md-preview-content .md-alert-important { --alert-color: #8250df; }
+.md-preview-content .md-alert-warning { --alert-color: #9a6700; }
+.md-preview-content .md-alert-caution { --alert-color: #cf222e; }
 .md-preview-content blockquote {
   margin: 1em 0;
   padding: 0.45em 1em;

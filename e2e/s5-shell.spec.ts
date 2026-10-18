@@ -143,6 +143,53 @@ test("侧栏：大纲页签、收起与展开", async ({ page }) => {
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
 });
 
+test("大纲跳转：编辑/分屏落编辑器，仅预览滚动预览面板", async ({ page }) => {
+  await page.goto("");
+  await page.getByTestId("btn-new").click();
+  await page.getByTestId("create-note").click();
+  await page.waitForSelector(EDITOR, { timeout: 15_000 });
+  await page.locator(EDITOR).first().click();
+
+  const filler = Array.from({ length: 30 }, (_, i) => `正文第 ${i + 1} 行`).join("\n\n");
+  await page.keyboard.insertText(
+    `# 一级标题\n\n${filler}\n\n## 二级标题\n\n${filler}\n\n## 三级标题\n\n${filler}`,
+  );
+
+  await page.getByTestId("tab-outline").click();
+  const outline = page.getByTestId("outline-pane");
+  const items = outline.locator(".outline-item");
+  await expect(items).toHaveCount(3);
+
+  // 分屏（桌面默认）：落点为编辑器，光标所在行就是目标标题
+  await items.nth(2).click();
+  await expect(page.locator(".cm-content")).toBeFocused();
+  await expect
+    .poll(async () => page.locator(".cm-activeLine").first().innerText(), { timeout: 5_000 })
+    .toBe("## 三级标题");
+
+  // 仅预览：落点改为预览面板，滚动到目标标题并尽量贴顶
+  await page.getByTestId("btn-view-preview").click();
+  const pane = page.getByTestId("preview-pane");
+  await expect(pane).toBeVisible();
+  await pane.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+
+  await items.nth(1).click();
+  await expect.poll(async () => pane.evaluate((el) => el.scrollTop), { timeout: 5_000 }).toBeGreaterThan(100);
+
+  const offset = await pane.evaluate((el) => {
+    const heading = el.querySelector(".md-preview-content h2") as HTMLElement | null;
+    if (!heading) return Number.POSITIVE_INFINITY;
+    return heading.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  });
+  expect(offset).toBeGreaterThanOrEqual(-2);
+  expect(offset).toBeLessThan(80);
+
+  // 仅预览时不把焦点塞进隐藏的源码编辑器
+  await expect(page.locator(".cm-content")).not.toBeFocused();
+});
+
 test("侧栏标题：点击显示 commit hash 前七位，再点一次回到标题", async ({ page }) => {
   await page.goto("");
   const title = page.getByTestId("sidebar-title");

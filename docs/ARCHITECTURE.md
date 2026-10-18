@@ -178,7 +178,16 @@ CodeMirror 6 是命令式 API，React 封装遵循：
   显式传 `root: document` 把样式表挂到文档根（见 ADR-022）。
 - **行号**：CodeMirror `lineNumbers()` 常驻，gutter 透明底、等宽字，`highlightActiveLineGutter()` 让光标所在行号用 on-surface 深色加粗；行号用 flex 在 28px 行高内垂直居中。
 - **Mermaid**：未命中 highlight.js 的代码块也保留 `language-*` 类，`MarkdownPreview` 据此把 ```mermaid 懒加载渲染为 SVG。
+- **GitHub 警报框**：`markdownRender` 的 core 规则把 `> [!NOTE]` 等块引用改写为
+  `div.md-alert.md-alert-<type>` + 标题段落；样式在共享的 `DEFAULT_PREVIEW_CSS` 里，
+  预览/HTML/PDF 同源，DOCX 在 `blockChildren()` 单独处理。
 - **视图切换不卸载编辑器**：仅预览时源码列收为 `0fr`、面板淡出隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
+- **大纲跳转**：点击时用编辑器**实时正文**重解析标题位置（旧偏移会因附件插入/连续输入而落错行），
+  再按当前视图选落点：编辑/分屏 → CodeMirror `scrollTo`，仅预览 → 预览面板 `scrollIntoView`
+  （`features/editor/activeEditor.ts` 的导航器 + `utils/outline.ts` 的匹配）。
+- **选中与标记输入**：活动行不创建层叠上下文（否则行底色盖住 `z-index:-1` 的选择层），
+  选中色固定为青色（不随主色 seed 变化）；选中后敲 `*` `_` `~` `` ` `` `$` `^` `=` 由 `wrapSelection()` 包裹并保持选中，选区两端空白（含换行）裁到标记外。
+  CJK 字体无 italic 面，编辑器与预览都显式 `font-synthesis: style` 才能让中文斜体真正倾斜。
 - **动效**：条件渲染的浮层统一走 `hooks/usePresence`（延迟卸载 + `data-state` 关键帧）；
   侧栏用宽度/透明度过渡，页签用滑动指示块，工具行走 grid 行高折叠，笔记新建/删除用
   entering/exiting 关键帧；明暗切换只在 320ms 窗口内为子树开启颜色过渡（见 ADR-040）。

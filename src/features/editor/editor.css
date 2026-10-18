@@ -377,6 +377,15 @@
 .editor-source-pane {
   background: var(--md-sys-color-surface);
   transition: opacity 200ms ease;
+
+  /*
+   * 选中态固定用青色：主色 seed（默认桃粉）与活动行底色同属暖色，
+   * 选中叠主色时只差明度、看不出「选中了」。青色与两种明暗表面都能拉开色相。
+   */
+  --editor-selection-bg: rgba(0, 188, 212, 0.34);
+  --editor-selection-bg-idle: rgba(0, 172, 193, 0.22);
+  --editor-selection-ring: rgba(0, 172, 193, 0.7);
+  --editor-selection-match: rgba(0, 188, 212, 0.14);
 }
 
 /* 仅预览：源码列收为 0fr，内容淡出后隐藏（不卸载，切回不丢撤销历史） */

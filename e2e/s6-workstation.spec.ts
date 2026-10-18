@@ -373,7 +373,7 @@ test("DOCX 导出后可以再导入（闭环）", async ({ page }) => {
   await page.getByTestId("create-note").click();
   await page.waitForSelector(EDITOR, { timeout: 15_000 });
   await page.locator(EDITOR).first().click();
-  await page.keyboard.insertText("# 导出标题\n\n正文段落。");
+  await page.keyboard.insertText("# 导出标题\n\n正文段落。\n\n> [!TIP]\n> 导出提示。");
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
   await page.getByTestId("btn-menu").click();
@@ -390,4 +390,7 @@ test("DOCX 导出后可以再导入（闭环）", async ({ page }) => {
   await expect(page.getByTestId("md-preview").locator("h1").first()).toContainText("导出标题", {
     timeout: 10_000,
   });
+  // 警报框走 DOCX 专用分支（标题 + 正文），往返后内容不丢
+  await expect(page.getByTestId("md-preview")).toContainText("导出提示");
+  await expect(page.getByTestId("md-preview")).toContainText("Tip");
 });

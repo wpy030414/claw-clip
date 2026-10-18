@@ -36,7 +36,11 @@ import {
 } from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
 import { formatMarkdown } from "@/utils/markdownFormat";
-import { setActiveEditor } from "./activeEditor";
+import {
+  setActiveEditor,
+  setOutlineNavigator,
+  type OutlineJumpTarget,
+} from "./activeEditor";
 import "@/features/editor/editor.css";
 
 interface Props {
@@ -48,6 +52,11 @@ interface Props {
 }
 
 type SaveState = "idle" | "saving" | "saved";
+
+/** 标题文本归一：折叠空白（markdown-it 与 DOM 的 textContent 可能差在换行/空格上）。 */
+function normalizeHeadingText(text: string | null): string {
+  return (text ?? "").replace(/\s+/g, " ").trim();
+}
 
 export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const { value, loading, onChange } = useMarkdownSession(noteId);
@@ -75,6 +84,10 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   // 浮层/面板卸载前留出退场动画时间
   const menuPresence = usePresence(menuOpen, 140);
   const previewPresence = usePresence(showPreview, 220);
+
+  const previewPaneRef = useRef<HTMLElement | null>(null);
+  /** 仅预览时点击大纲：标题还没渲染出来（预览 120ms 防抖）就先挂起，等 HTML 到位再跳。 */
+  const pendingPreviewJump = useRef<OutlineJumpTarget | null>(null);
 
   const wordCount = useMemo(() => countWords(value), [value]);
   const { html, ready: htmlReady } = useRenderedMarkdown(value, showPreview);
@@ -113,6 +126,57 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
       clearTimeout(timer);
     };
   }, [value, isDesktop, sidebarOpen, sidebarTab, setOutline]);
+
+  /**
+   * 预览面板内滚动到对应标题。
+   *
+   * 优先按「级别 + 文本」匹配（手写 HTML 里可能也有 h*，序号未必对齐），
+   * 匹配不上再按大纲序号兜底；返回是否找到目标。
+   */
+  const scrollPreviewToHeading = useCallback((target: OutlineJumpTarget): boolean => {
+    const host = previewPaneRef.current?.querySelector<HTMLElement>(".md-preview-content");
+    if (!host) return false;
+    const headings = Array.from(host.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6"));
+    const wanted = normalizeHeadingText(target.text);
+    const tag = `H${target.level}`;
+    const matched =
+      headings.find(
+        (h) => h.tagName === tag && normalizeHeadingText(h.textContent) === wanted,
+      ) ??
+      headings.find((h) => normalizeHeadingText(h.textContent) === wanted) ??
+      headings[target.index];
+    if (!matched) return false;
+    matched.scrollIntoView({ block: "start" });
+    return true;
+  }, []);
+
+  /**
+   * 大纲跳转落点：以当前视图为准——编辑 / 分屏落编辑器，仅预览落预览面板。
+   * 仅预览时编辑器不可见，把焦点和光标塞进去只会「跳了个看不见的地方」。
+   */
+  const navigateOutline = useCallback(
+    (target: OutlineJumpTarget) => {
+      if (effectiveView === "preview") {
+        pendingPreviewJump.current = scrollPreviewToHeading(target) ? null : target;
+        return;
+      }
+      pendingPreviewJump.current = null;
+      editorRef.current?.scrollTo(target.pos);
+    },
+    [effectiveView, scrollPreviewToHeading],
+  );
+
+  useEffect(() => {
+    setOutlineNavigator(navigateOutline);
+    return () => setOutlineNavigator(null);
+  }, [navigateOutline]);
+
+  // 预览渲染带防抖：挂起的跳转等新 HTML 提交后再补一次
+  useEffect(() => {
+    const pending = pendingPreviewJump.current;
+    if (!pending) return;
+    if (scrollPreviewToHeading(pending)) pendingPreviewJump.current = null;
+  }, [html, htmlReady, scrollPreviewToHeading]);
 
   // 离开编辑器时清空大纲，避免下一条笔记短暂显示上一条的标题
   useEffect(() => () => setOutline([]), [setOutline]);
@@ -414,6 +478,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
             data-testid="preview-pane"
             data-state={previewPresence.state}
             aria-hidden={!showPreview}
+            ref={previewPaneRef}
           >
             {htmlReady ? (
               <MarkdownPreview html={html} css={css} testId="md-preview" />

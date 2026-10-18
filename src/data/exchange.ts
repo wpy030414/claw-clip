@@ -215,6 +215,15 @@ async function imageParagraph(src: string): Promise<DocxChild | null> {
 }
 
 /** HTML 元素 → docx 块级元素（列表）。 */
+/** GitHub 警报框类型 → DOCX 语义色（与预览 CSS 保持一致）。 */
+const ALERT_DOCX_COLORS: Record<string, string> = {
+  note: "0969DA",
+  tip: "1A7F37",
+  important: "8250DF",
+  warning: "9A6700",
+  caution: "CF222E",
+};
+
 async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
   const { Paragraph, HeadingLevel, Table, TableRow, TableCell, TextRun, WidthType, AlignmentType } =
     docxApi;
@@ -250,6 +259,33 @@ async function blockChildren(el: Element, depth = 0): Promise<DocxChild[]> {
     for (const img of imgs) {
       const p = await imageParagraph(img.getAttribute("src") ?? "");
       if (p) out.push(p);
+    }
+    return out.length ? out : [new Paragraph({ text: "" })];
+  }
+  if (el.classList.contains("md-alert")) {
+    // 警报框：标题加粗并带左侧色条，正文按普通块递归（列表/图片等不丢）
+    const type =
+      Object.keys(ALERT_DOCX_COLORS).find((key) => el.classList.contains(`md-alert-${key}`)) ??
+      "note";
+    const color = ALERT_DOCX_COLORS[type];
+    const titleEl = el.querySelector(":scope > .md-alert-title");
+    const titleText = (titleEl?.textContent ?? "").trim();
+    const out: DocxChild[] = [];
+    if (titleText) {
+      out.push(
+        new Paragraph({
+          children: [new TextRun({ text: titleText, bold: true, color })],
+          indent: { left: 240 },
+          spacing: { before: 120, after: 60 },
+          border: {
+            left: { style: docxApi.BorderStyle.SINGLE, size: 18, space: 10, color },
+          },
+        }),
+      );
+    }
+    for (const child of Array.from(el.children)) {
+      if (child === titleEl) continue;
+      out.push(...(await blockChildren(child, depth)));
     }
     return out.length ? out : [new Paragraph({ text: "" })];
   }

@@ -134,6 +134,64 @@ const TASK_RE = /^[-*+]\s+\[[ xX]\]\s+/;
 const UL_RE = /^[-*+]\s+(?!\[[ xX]\])/;
 const OL_RE = /^\d+\.\s+/;
 
+/** 可直接触发选区包裹的半角标记键。 */
+export const MARKER_KEYS: ReadonlySet<string> = new Set(["*", "_", "~", "`", "$", "^", "="]);
+
+/**
+ * 中文输入法在中文标点模式下会把标记敲成全角（`＊` `＿` `～` `` ｀ `` `＄`），
+ * 有些 IME 还会让 keydown 变成 `Process` / 组合态，拦截不到。
+ * 统一按「实际落进文档的字符」归一成 Markdown 需要的半角标记。
+ */
+const FULLWIDTH_MARKERS: Record<string, string> = {
+  "＊": "*", // U+FF0A
+  "＿": "_", // U+FF3F
+  "～": "~", // U+FF5E
+  "〜": "~", // U+301C（日文波浪线，部分输入法使用）
+  "｀": "`", // U+FF40
+  "＄": "$", // U+FF04
+  "＾": "^", // U+FF3E
+  "＝": "=", // U+FF1D
+};
+
+/** 把实际插入的字符归一为可包裹的标记；不是标记返回 null。 */
+export function markerFromInput(text: string): string | null {
+  if (MARKER_KEYS.has(text)) return text;
+  return FULLWIDTH_MARKERS[text] ?? null;
+}
+
+/**
+ * 直接用键盘敲标记（`*` `_` `~` `` ` `` `$` `^` `=`）时的选区包裹。
+ *
+ * 与工具栏的 `toggleInline` 不同：这里**不做取消/占位**，也**保持内文仍被选中**。
+ * 保持选区是关键——敲一次 `*` 得到 `*文字*` 且「文字」仍选中，紧接着再敲一个 `*`
+ * 就自然升级成 `**文字**`，`~`→`~~`（删除线）、`=`→`==`（高亮）、`` ` ``→`` `` `` 同理。
+ *
+ * 选区两端的空白（含换行）留在标记外：`* 文字 *`、`*文字` + 换行 + `*` 在 Markdown 里
+ * 都不是合法的强调（标记必须紧贴文字），预览会把星号原样显示出来——这正是
+ * 「识别到却没渲染」的常见原因（三击选整行/双击选词常把行尾空白或换行一起选进来）。
+ * 空选区（或整段都是空白）返回空改动，调用方据此放弃拦截、交还给默认输入。
+ */
+export function wrapSelection(
+  doc: string,
+  from: number,
+  to: number,
+  marker: string,
+): CommandResult {
+  if (from >= to) return { changes: [], selection: { anchor: from, head: to } };
+  let start = from;
+  let end = to;
+  while (start < end && /\s/.test(doc[start])) start += 1;
+  while (end > start && /\s/.test(doc[end - 1])) end -= 1;
+  if (start === end) return { changes: [], selection: { anchor: from, head: to } };
+  return {
+    changes: [
+      { from: start, to: start, insert: marker },
+      { from: end, to: end, insert: marker },
+    ],
+    selection: { anchor: start + marker.length, head: end + marker.length },
+  };
+}
+
 /** 生成工具栏命令对应的编辑操作。 */
 export function buildCommand(
   doc: string,
