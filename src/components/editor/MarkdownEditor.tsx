@@ -24,6 +24,10 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
 import { buildCommand, markerFromInput, wrapSelection, type MarkdownCommand } from "./markdownCommands";
+import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
+
+/** 大纲跳转贴顶时保留的留白（与旧 scrollIntoView 的 yMargin 一致）。 */
+const SCROLL_MARGIN = 24;
 
 /** 在 EditorView 上执行一次 Markdown 命令；返回是否产生了改动。 */
 function runInView(view: EditorView, command: MarkdownCommand): boolean {
@@ -319,11 +323,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
       const view = viewRef.current;
       if (!view) return;
       const target = Math.max(0, Math.min(pos, view.state.doc.length));
-      view.dispatch({
-        selection: { anchor: target },
-        effects: EditorView.scrollIntoView(target, { y: "start", yMargin: 24 }),
-      });
+      // 光标与焦点立刻到位；滚动交给平滑动画，避免「瞬移」丢失位置感。
+      view.dispatch({ selection: { anchor: target } });
       view.focus();
+      // CodeMirror 的 scrollIntoView 效果是一次性贴边（瞬时），这里自己算落点。
+      // 落点每帧重算：刚切回编辑/分屏时列宽还在 260ms 过渡中，换行与行高
+      // 持续变化，点击那一刻算好的位置会偏（预览列收起时甚至接近 0 宽）。
+      animateScrollTo(view.scrollDOM, () => {
+        const scroller = view.scrollDOM;
+        const block = view.lineBlockAt(target);
+        return scrollTopFor({
+          scrollTop: scroller.scrollTop,
+          currentTop: view.documentTop + block.top,
+          containerTop: scroller.getBoundingClientRect().top,
+          margin: SCROLL_MARGIN,
+          maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
+        });
+      });
     },
     applyCommand: (command: MarkdownCommand) => {
       const view = viewRef.current;

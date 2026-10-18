@@ -36,6 +36,7 @@ import {
 } from "@/data/exchange";
 import { countWords } from "@/utils/markdown";
 import { formatMarkdown } from "@/utils/markdownFormat";
+import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
 import {
   setActiveEditor,
   setOutlineNavigator,
@@ -56,6 +57,24 @@ type SaveState = "idle" | "saving" | "saved";
 /** 标题文本归一：折叠空白（markdown-it 与 DOM 的 textContent 可能差在换行/空格上）。 */
 function normalizeHeadingText(text: string | null): string {
   return (text ?? "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * 在预览 DOM 里找大纲条目对应的标题节点。
+ *
+ * 优先「级别 + 文本」（手写 HTML 里可能也有 h*，序号未必对齐），
+ * 再退到纯文本，最后按大纲序号兜底。
+ */
+function findPreviewHeading(host: HTMLElement, target: OutlineJumpTarget): HTMLElement | null {
+  const headings = Array.from(host.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6"));
+  const wanted = normalizeHeadingText(target.text);
+  const tag = `H${target.level}`;
+  return (
+    headings.find((h) => h.tagName === tag && normalizeHeadingText(h.textContent) === wanted) ??
+    headings.find((h) => normalizeHeadingText(h.textContent) === wanted) ??
+    headings[target.index] ??
+    null
+  );
 }
 
 export function EditorPane({ noteId, onBack, onDeleted }: Props) {
@@ -130,23 +149,27 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   /**
    * 预览面板内滚动到对应标题。
    *
-   * 优先按「级别 + 文本」匹配（手写 HTML 里可能也有 h*，序号未必对齐），
-   * 匹配不上再按大纲序号兜底；返回是否找到目标。
+   * 返回是否找到目标；滚动走平滑动画（和编辑器一致），系统开启「减少动态效果」
+   * 时退化为瞬时。落点每帧重算：视图切换时预览列也在做 260ms 的宽度过渡，
+   * 标题会随换行一起移动，一次性算好的位置很快就会过期。
    */
   const scrollPreviewToHeading = useCallback((target: OutlineJumpTarget): boolean => {
-    const host = previewPaneRef.current?.querySelector<HTMLElement>(".md-preview-content");
-    if (!host) return false;
-    const headings = Array.from(host.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6"));
-    const wanted = normalizeHeadingText(target.text);
-    const tag = `H${target.level}`;
-    const matched =
-      headings.find(
-        (h) => h.tagName === tag && normalizeHeadingText(h.textContent) === wanted,
-      ) ??
-      headings.find((h) => normalizeHeadingText(h.textContent) === wanted) ??
-      headings[target.index];
-    if (!matched) return false;
-    matched.scrollIntoView({ block: "start" });
+    const pane = previewPaneRef.current;
+    const host = pane?.querySelector<HTMLElement>(".md-preview-content");
+    if (!pane || !host) return false;
+    if (!findPreviewHeading(host, target)) return false;
+    animateScrollTo(pane, () => {
+      // 预览 HTML 有 120ms 防抖，渲染更新后节点会被替换，所以每帧重新查
+      const liveHost = previewPaneRef.current?.querySelector<HTMLElement>(".md-preview-content");
+      const heading = liveHost ? findPreviewHeading(liveHost, target) : null;
+      if (!heading) return pane.scrollTop;
+      return scrollTopFor({
+        scrollTop: pane.scrollTop,
+        currentTop: heading.getBoundingClientRect().top,
+        containerTop: pane.getBoundingClientRect().top,
+        maxScrollTop: pane.scrollHeight - pane.clientHeight,
+      });
+    });
     return true;
   }, []);
 

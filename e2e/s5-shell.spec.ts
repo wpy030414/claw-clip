@@ -160,8 +160,42 @@ test("大纲跳转：编辑/分屏落编辑器，仅预览滚动预览面板", a
   const items = outline.locator(".outline-item");
   await expect(items).toHaveCount(3);
 
+  // 采样 scrollTop：大纲跳转是「快速滚动」而不是瞬移（应出现多个中间位置）
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const sampleScrollTop = (selector: string) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      const store = ((window as unknown as { __scrollSamples?: Record<string, number[]> })
+        .__scrollSamples ??= {});
+      const samples: number[] = (store[sel] = []);
+      if (!el) return;
+      const started = performance.now();
+      const tick = () => {
+        samples.push(el.scrollTop);
+        if (performance.now() - started < 1_200) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, selector);
+  const distinctScrollPositions = async (selector: string) =>
+    new Set(
+      await page.evaluate(
+        (sel) =>
+          (
+            (window as unknown as { __scrollSamples?: Record<string, number[]> }).__scrollSamples?.[
+              sel
+            ] ?? []
+          ).map((v) => Math.round(v)),
+        selector,
+      ),
+    ).size;
+
   // 分屏（桌面默认）：落点为编辑器，光标所在行就是目标标题
+  await sampleScrollTop(".cm-scroller");
   await items.nth(2).click();
+  // 瞬移只会有「起点 + 终点」两个值，滚动动画应有更多中间位置
+  await expect
+    .poll(() => distinctScrollPositions(".cm-scroller"), { timeout: 5_000 })
+    .toBeGreaterThan(2);
   await expect(page.locator(".cm-content")).toBeFocused();
   await expect
     .poll(async () => page.locator(".cm-activeLine").first().innerText(), { timeout: 5_000 })
@@ -175,8 +209,24 @@ test("大纲跳转：编辑/分屏落编辑器，仅预览滚动预览面板", a
     el.scrollTop = 0;
   });
 
+  await sampleScrollTop(".editor-preview-pane");
   await items.nth(1).click();
-  await expect.poll(async () => pane.evaluate((el) => el.scrollTop), { timeout: 5_000 }).toBeGreaterThan(100);
+  // 预览端同样走平滑滚动（且此处恰好落在列宽过渡中，验证落点会跟随布局重算）
+  await expect
+    .poll(() => distinctScrollPositions(".editor-preview-pane"), { timeout: 5_000 })
+    .toBeGreaterThan(2);
+  // 平滑滚动是动画：等 scrollTop 连续两次采样一致（动画结束）再看落点
+  await expect
+    .poll(
+      async () => {
+        const first = await pane.evaluate((el) => el.scrollTop);
+        await page.waitForTimeout(80);
+        const second = await pane.evaluate((el) => el.scrollTop);
+        return first === second ? first : -1;
+      },
+      { timeout: 5_000 },
+    )
+    .toBeGreaterThan(100);
 
   const offset = await pane.evaluate((el) => {
     const heading = el.querySelector(".md-preview-content h2") as HTMLElement | null;
@@ -188,6 +238,55 @@ test("大纲跳转：编辑/分屏落编辑器，仅预览滚动预览面板", a
 
   // 仅预览时不把焦点塞进隐藏的源码编辑器
   await expect(page.locator(".cm-content")).not.toBeFocused();
+});
+
+test("大纲跳转：切换视图后立刻点击也落到正确位置", async ({ page }) => {
+  await page.goto("");
+  await page.getByTestId("btn-new").click();
+  await page.getByTestId("create-note").click();
+  await page.waitForSelector(EDITOR, { timeout: 15_000 });
+  await page.locator(EDITOR).first().click();
+
+  // 长段落：不同列宽下换行差异很大，旧实现按窄列宽算出的位置会偏出很远
+  const filler = Array.from(
+    { length: 18 },
+    (_, i) => `第 ${i + 1} 段：${"这段文字用来制造不同列宽下的换行差异。".repeat(4)}`,
+  ).join("\n\n");
+  await page.keyboard.insertText(
+    `# 一级标题\n\n${filler}\n\n## 二级标题\n\n${filler}\n\n## 三级标题\n\n${filler}`,
+  );
+
+  await page.getByTestId("tab-outline").click();
+  const items = page.getByTestId("outline-pane").locator(".outline-item");
+  await expect(items).toHaveCount(3);
+
+  // 同一帧内切换视图并点击大纲：此时列宽过渡刚开始，行高/换行还是「0 宽」时的旧值
+  // （Playwright 的逐次点击会插入足够延迟，过渡可能已结束，必须用脚本同时触发）
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>('[data-testid="btn-view-split"]')?.click();
+    document.querySelector<HTMLElement>('[data-testid="outline-item-2"]')?.click();
+  });
+
+  await expect
+    .poll(async () => page.locator(".cm-activeLine").first().innerText(), { timeout: 5_000 })
+    .toBe("## 三级标题");
+
+  // 滚动结束后目标标题确实停在视口顶部附近（旧实现会差出几十上百像素）。
+  // 轮询到落点进入 [-2, 80) 区间：动画中途也可能是负数，不能只断言上界。
+  await expect
+    .poll(
+      async () => {
+        const offset = await page.evaluate(() => {
+          const line = document.querySelector<HTMLElement>(".cm-activeLine");
+          const scroller = document.querySelector<HTMLElement>(".cm-scroller");
+          if (!line || !scroller) return Number.NEGATIVE_INFINITY;
+          return line.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        });
+        return offset >= -2 && offset < 80;
+      },
+      { timeout: 5_000 },
+    )
+    .toBe(true);
 });
 
 test("侧栏标题：点击显示 commit hash 前七位，再点一次回到标题", async ({ page }) => {
