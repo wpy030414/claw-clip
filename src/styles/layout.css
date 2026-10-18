@@ -1022,3 +1022,122 @@ m3e-theme {
     display: none;
   }
 }
+
+/* ---------------- 阻塞式任务进度（图片上传/迁移） ---------------- */
+
+dialog.task-progress {
+  /* 全局 `* { margin: 0 }` 会覆盖 UA 给 modal dialog 的居中规则，必须显式补回 */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
+  border: none;
+  padding: 0;
+  border-radius: 20px;
+  background: transparent;
+  color: inherit;
+  max-width: none;
+  max-height: none;
+  /* UA 给 modal dialog 设了 overflow:auto；dialog 盒子与卡片等大，
+     会把圆角卡片的阴影裁成四个直角角落。放开裁剪让阴影贴合圆角。 */
+  overflow: visible;
+  outline: none;
+  /* 进度浮层不是可读内容：禁止拖选文字（否则会出现蓝色选区） */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+dialog.task-progress::backdrop {
+  background: rgb(0 0 0 / 32%);
+  backdrop-filter: blur(1.5px);
+}
+
+.task-progress-card {
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 240px;
+  max-width: min(360px, calc(100vw - 48px));
+  padding: 26px 30px 22px;
+  border-radius: 20px;
+  background: var(--md-sys-color-surface-container-high, #ece6f0);
+  color: var(--md-sys-color-on-surface, #1d1b20);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 24%);
+  text-align: center;
+}
+
+.task-progress-ring {
+  width: 58px;
+  height: 58px;
+  transform: rotate(-90deg);
+}
+
+.task-progress-track {
+  fill: none;
+  stroke: var(--md-sys-color-surface-container-highest, #e6e0e9);
+  stroke-width: 4;
+}
+
+.task-progress-bar {
+  fill: none;
+  stroke: var(--md-sys-color-primary, #6750a4);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 160ms linear;
+}
+
+.task-progress-ring[data-indeterminate="true"] {
+  animation: task-progress-spin 1s linear infinite;
+}
+
+.task-progress-ring[data-indeterminate="true"] .task-progress-bar {
+  animation: task-progress-dash 1.2s ease-in-out infinite;
+}
+
+.task-progress-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.task-progress-meta {
+  font-size: 0.78rem;
+  color: var(--md-sys-color-on-surface-variant, #49454f);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.task-progress-hint {
+  font-size: 0.7rem;
+  color: var(--md-sys-color-on-surface-variant, #49454f);
+  opacity: 0.8;
+}
+
+@keyframes task-progress-spin {
+  to {
+    transform: rotate(270deg);
+  }
+}
+
+@keyframes task-progress-dash {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  50% {
+    stroke-dashoffset: 28;
+  }
+  100% {
+    stroke-dashoffset: 100;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-progress-ring,
+  .task-progress-ring[data-indeterminate="true"],
+  .task-progress-ring[data-indeterminate="true"] .task-progress-bar {
+    animation: none !important;
+  }
+}

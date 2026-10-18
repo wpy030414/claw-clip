@@ -21,6 +21,7 @@ import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { usePresence } from "@/hooks/usePresence";
 import { useNotesStore } from "@/stores/notesStore";
 import { useIntegrationStore } from "@/stores/integrationStore";
+import { useTaskProgressStore } from "@/stores/taskProgressStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { defaultViewMode, useUiStore, type ViewMode } from "@/stores/uiStore";
 import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
@@ -39,6 +40,7 @@ import {
 import { countWords } from "@/utils/markdown";
 import { formatMarkdown } from "@/utils/markdownFormat";
 import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
+import { SpeedMeter } from "@/utils/speed";
 import {
   setActiveEditor,
   setOutlineNavigator,
@@ -264,17 +266,52 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
    */
   const insertFiles = useCallback(
     async (files: File[]) => {
-      for (const file of files) {
-        const isImage = isImageFile(file);
-        const result = await resolveUploadTarget(file, noteId, imageHost);
-        if (result.kind === "remote") {
-          recordImageUpload(file.size);
-        } else if (result.error) {
-          toastWarning(`图床上传失败，已保存到本地：${result.error}`, 6000);
+      // 只有真正会走图床时才需要阻塞式进度（本地存储是同步的，不会有等待感）
+      const willUpload = imageHost === "scdn" && files.some((file) => isImageFile(file));
+      const taskId = willUpload
+        ? useTaskProgressStore
+            .getState()
+            .begin(files.length > 1 ? `正在上传 ${files.length} 个文件` : "正在上传图片", files.length)
+        : null;
+      if (willUpload && taskId === null) {
+        toastWarning("已有图片任务正在进行，请稍后再试");
+        return;
+      }
+
+      try {
+        let index = 0;
+        const meter = new SpeedMeter();
+        for (const file of files) {
+          if (taskId !== null) {
+            useTaskProgressStore.getState().update(taskId, { done: index });
+          }
+          const isImage = isImageFile(file);
+          let loaded = 0;
+          const result = await resolveUploadTarget(file, noteId, imageHost, {
+            onProgress: (nextLoaded) => {
+              const speed = meter.add(Math.max(0, nextLoaded - loaded));
+              loaded = nextLoaded;
+              if (taskId !== null) {
+                useTaskProgressStore.getState().update(taskId, { speed });
+              }
+            },
+          });
+          if (result.kind === "remote") {
+            recordImageUpload(file.size);
+          } else if (result.error) {
+            toastWarning(`图床上传失败，已保存到本地：${result.error}`, 6000);
+          }
+          const alt = (file.name || (isImage ? "图片" : "附件")).replace(/[\[\]\r\n]/g, " ").trim();
+          const md = isImage ? `![${alt || "图片"}](${result.target})` : `[${alt || "附件"}](${result.target})`;
+          editorRef.current?.insertText(`\n${md}\n`);
+          index += 1;
+          if (taskId !== null) {
+            useTaskProgressStore.getState().update(taskId, { done: index });
+          }
         }
-        const alt = (file.name || (isImage ? "图片" : "附件")).replace(/[\[\]\r\n]/g, " ").trim();
-        const md = isImage ? `![${alt || "图片"}](${result.target})` : `[${alt || "附件"}](${result.target})`;
-        editorRef.current?.insertText(`\n${md}\n`);
+      } finally {
+        if (taskId !== null) useTaskProgressStore.getState().end(taskId);
+        editorRef.current?.focus();
       }
     },
     [noteId, imageHost, recordImageUpload],

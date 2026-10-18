@@ -78,55 +78,114 @@ function nextSlot(): Promise<void> {
   return run;
 }
 
-function withTimeout(timeoutMs: number, outer?: AbortSignal) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const onAbort = () => controller.abort();
-  if (outer) {
-    if (outer.aborted) controller.abort();
-    else outer.addEventListener("abort", onAbort, { once: true });
-  }
-  return {
-    signal: controller.signal,
-    done: () => {
-      clearTimeout(timer);
-      outer?.removeEventListener("abort", onAbort);
-    },
-  };
+export interface UploadTransportOptions {
+  signal?: AbortSignal;
+  /** 已上传字节 / 总字节（用于进度浮层显示网络速度） */
+  onProgress?: (loaded: number, total: number) => void;
 }
 
-async function postImage(file: File, timeoutMs: number, signal?: AbortSignal) {
-  const form = new FormData();
-  form.append("image", file, file.name || "image");
-  const guard = withTimeout(timeoutMs, signal);
-  try {
-    return await fetch(IMAGE_HOST_ENDPOINT, { method: "POST", body: form, signal: guard.signal });
-  } finally {
-    guard.done();
-  }
+/** 上传传输层的最小响应接口（便于测试注入）。 */
+export interface UploadResponse {
+  ok: boolean;
+  status: number;
+  header: (name: string) => string | null;
+  json: () => Promise<unknown>;
 }
+
+export type UploadTransport = (
+  form: FormData,
+  options: UploadTransportOptions,
+) => Promise<UploadResponse>;
+
+function abortError(): Error {
+  const error = new Error("aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+/**
+ * 浏览器实现：用 XHR 而不是 fetch——只有 `xhr.upload.onprogress` 能拿到
+ * 真实的上传字节数，fetch 没有上传进度事件。
+ */
+const xhrTransport: UploadTransport = (form, { signal, onProgress }) =>
+  new Promise<UploadResponse>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => xhr.abort();
+
+    xhr.open("POST", IMAGE_HOST_ENDPOINT);
+    xhr.timeout = 30_000;
+    xhr.upload.onprogress = (event) => {
+      onProgress?.(event.loaded, event.lengthComputable ? event.total : 0);
+    };
+    xhr.onload = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        header: (name) => xhr.getResponseHeader(name),
+        json: async () => JSON.parse(xhr.responseText || "null"),
+      });
+    };
+    xhr.onerror = () => fail(new TypeError("network error"));
+    xhr.ontimeout = () => fail(abortError());
+    xhr.onabort = () => fail(abortError());
+
+    if (signal) {
+      if (signal.aborted) {
+        fail(abortError());
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    xhr.send(form);
+  });
+
+let transport: UploadTransport = xhrTransport;
+
+/** 仅供测试：替换上传传输层（传 null 恢复为 XHR）。 */
+export function __setUploadTransport(next: UploadTransport | null): void {
+  transport = next ?? xhrTransport;
+}
+
+export interface UploadOptions extends UploadTransportOptions {}
 
 /**
  * 上传一张图片，返回外链。失败抛 ImageUploadError。
  * 429 / 5xx / 网络错误最多重试一次。
  */
-export async function uploadToScdn(file: File, signal?: AbortSignal): Promise<string> {
+export async function uploadToScdn(
+  file: File,
+  { signal, onProgress }: UploadOptions = {},
+): Promise<string> {
   if (file.size > IMAGE_HOST_MAX_BYTES) {
     throw new ImageUploadError("图片超过 20MB，无法上传到图床", "too_large");
   }
 
+  const form = new FormData();
+  form.append("image", file, file.name || "image");
   let lastError: ImageUploadError | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await nextSlot();
     try {
-      const res = await postImage(file, 30_000, signal);
+      const res = await transport(form, { signal, onProgress });
       if (res.status === 413) {
         throw new ImageUploadError("图片超过图床限制（约 20MB）", "too_large");
       }
       if (res.status === 429) {
         lastError = new ImageUploadError("图床限流（5 次/5 秒），请稍后重试", "rate_limit");
         if (attempt === 0) {
-          const retryAfter = Number(res.headers.get("retry-after"));
+          const retryAfter = Number(res.header("retry-after"));
           await sleep(Math.min(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000, 10_000));
           continue;
         }
@@ -175,12 +234,13 @@ export async function resolveUploadTarget(
   file: File,
   noteId: string,
   host: ImageHostKind,
+  options: UploadOptions = {},
 ): Promise<UploadTarget> {
   if (host !== "scdn" || !isImageFile(file)) {
     return { target: `${BLOB_URL_SCHEME}${await saveBlob(noteId, file)}`, kind: "local" };
   }
   try {
-    return { target: await uploadToScdn(file), kind: "remote" };
+    return { target: await uploadToScdn(file, options), kind: "remote" };
   } catch (error) {
     return {
       target: `${BLOB_URL_SCHEME}${await saveBlob(noteId, file)}`,

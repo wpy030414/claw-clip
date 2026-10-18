@@ -8,6 +8,7 @@
  * 仅预览时落到预览面板（见 EditorPane 的注册）。没有导航器时退回编辑器。
  */
 import type { MarkdownEditorHandle } from "@/components/editor/MarkdownEditor";
+import { useNotesStore } from "@/stores/notesStore";
 
 /** 一次大纲跳转的完整意图（含在列表中的序号，预览端按序号兜底定位）。 */
 export interface OutlineJumpTarget {
@@ -42,4 +43,17 @@ export function jumpToOutline(target: OutlineJumpTarget): void {
     return;
   }
   handle?.scrollTo(target.pos);
+}
+
+/**
+ * 把当前编辑器的**实时正文**立即写回 store/IDB。
+ *
+ * 图床批量迁移前调用：迁移直接改写 IDB 里的正文，若不先 flush，
+ * 编辑器里尚未落库的输入会在迁移后覆盖新内容（或相反）。
+ */
+export async function flushActiveEditor(): Promise<void> {
+  const value = handle?.getValue() ?? null;
+  const activeId = useNotesStore.getState().activeNoteId;
+  if (value === null || !activeId) return;
+  await useNotesStore.getState().saveNote(activeId, { content: value });
 }

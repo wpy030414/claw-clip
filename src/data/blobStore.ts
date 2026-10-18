@@ -53,7 +53,11 @@ function revokeBlobUrl(id: string): void {
 }
 
 /** 保存附件二进制，返回 blob id（正文用 `BLOB_URL_SCHEME + id` 引用）。 */
-export async function saveBlob(noteId: string, file: Blob): Promise<string> {
+export async function saveBlob(
+  noteId: string,
+  file: Blob,
+  options: { sourceUrl?: string } = {},
+): Promise<string> {
   const id = newId();
   const record: BlobRecord = {
     id,
@@ -64,6 +68,7 @@ export async function saveBlob(noteId: string, file: Blob): Promise<string> {
     createdAt: Date.now(),
     // 此刻正文还没保存；笔记落库时 upsertNote 会把它加到 1。
     refCount: 0,
+    ...(options.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
   };
   await withTx(blobStoreName, "readwrite", (tx) =>
     idbReq(tx.objectStore(blobStoreName).put(record)),

@@ -9,6 +9,8 @@ import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
+import { TaskProgressOverlay } from "@/components/common/TaskProgressOverlay";
+import { requestPersistentStorage } from "@/data/storageReport";
 import { StorageDialog } from "@/features/storage/StorageDialog";
 import { DesktopLayout } from "./DesktopLayout";
 import { MobileLayout } from "./MobileLayout";
@@ -24,6 +26,11 @@ export function AppShell() {
   useEffect(() => {
     setDesktop(isDesktop);
   }, [isDesktop, setDesktop]);
+
+  // 持久化存储：启动时自动尝试一次（浏览器可能静默拒绝），不向用户暴露申请按钮
+  useEffect(() => {
+    void requestPersistentStorage();
+  }, []);
 
   // 侧栏笔记树是常驻数据，启动时加载一次
   useEffect(() => {
@@ -59,6 +66,7 @@ export function AppShell() {
     <>
       {isDesktop ? <DesktopLayout /> : <MobileLayout />}
       <StorageDialog />
+      <TaskProgressOverlay />
     </>
   );
 }

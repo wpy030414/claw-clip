@@ -92,6 +92,13 @@ interface NotesState {
   exportBackup: () => Promise<BackupPayload>;
   /** 清空全部数据。 */
   reset: () => Promise<void>;
+  /**
+   * 批量改写正文（如图床迁移）前调用：换代际并等待在途写入。
+   * 调用方需先把活动编辑器的实时内容落库（见 `flushActiveEditor`）。
+   */
+  beginBulkMutation: () => Promise<void>;
+  /** 批量改写后调用：清缓存、换代际、重载树与当前笔记，让编辑器重挂载。 */
+  finishBulkMutation: () => Promise<void>;
 
   // —— 文件夹 ——
   loadFolders: () => Promise<void>;
@@ -275,6 +282,36 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
       folders: [],
       revision: get().revision + 1,
     });
+  },
+
+  async beginBulkMutation() {
+    // 换代际后，旧编辑器会话的防抖/卸载保存会被丢弃，避免覆盖迁移结果
+    set({ dataEpoch: get().dataEpoch + 1 });
+    await drainWrites();
+  },
+
+  async finishBulkMutation() {
+    noteCache.clear();
+    releaseBlobUrls();
+    // 再换一次代际：编辑器按新代际重挂载，读取迁移后的正文
+    set({ dataEpoch: get().dataEpoch + 1 });
+    await get().loadFolders();
+    await get().loadTree();
+
+    const activeId = get().activeNoteId;
+    if (activeId) {
+      const stillExists = get().treeNotes.some((n) => n.id === activeId);
+      if (!stillExists) {
+        set({ activeNoteId: null, activeNote: null });
+      } else {
+        const fresh = await datasource.getNote(activeId);
+        if (fresh) {
+          noteCache.set(activeId, fresh);
+          set({ activeNote: fresh });
+        }
+      }
+    }
+    set({ revision: get().revision + 1 });
   },
 
   // —— 文件夹 ——

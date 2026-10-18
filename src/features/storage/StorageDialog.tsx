@@ -24,7 +24,8 @@ const SECTIONS: Array<{ key: Section; label: string; icon: string }> = [
 
 /** M3E dialog 的尺寸由 host 上的 CSS 变量控制（host 是 display: contents）。 */
 const DIALOG_STYLE = {
-  "--m3e-dialog-min-width": "min(720px, calc(100vw - 48px))",
+  // min = max：M3E dialog 是 shrink-to-fit，min/max 不同会让内容多的 tab 把 dialog 撑宽
+  "--m3e-dialog-min-width": "min(880px, calc(100vw - 48px))",
   "--m3e-dialog-max-width": "min(880px, calc(100vw - 48px))",
   "--m3e-dialog-max-height": "min(760px, calc(100vh - 48px))",
 } as CSSProperties;

@@ -116,7 +116,7 @@ export async function buildCloudSnapshot({
         const file = new File([base64ToBlob(blob.base64, blob.mime)], `image-${blob.id}.${extensionFor(blob.mime)}`, {
           type: blob.mime,
         });
-        const url = await uploadToScdn(file, signal);
+        const url = await uploadToScdn(file, { signal });
         remoteUrls.set(blob.id, url);
         stats.imagesUploaded += 1;
         await setBlobRemoteUrl(blob.id, url);

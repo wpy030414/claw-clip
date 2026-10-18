@@ -29,4 +29,6 @@ export interface BlobRecord {
   remoteUrl?: string;
   /** 图床上传时间（epoch ms） */
   remoteUploadedAt?: number;
+  /** 从外链下载回本地时的原始 URL（迁移去重，避免同图重复下载） */
+  sourceUrl?: string;
 }

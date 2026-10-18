@@ -69,6 +69,20 @@ function fulfillJson(route: Route, status: number, body: unknown): Promise<void>
 }
 
 test("存储 dialog：用量、分解与排行", async ({ page }) => {
+  // 记录 persist() 调用：启动与打开 dialog 时都应自动尝试申请持久化
+  await page.addInitScript(() => {
+    const target = window as unknown as { __persistCalls: number };
+    target.__persistCalls = 0;
+    const storage = navigator.storage;
+    if (storage && typeof storage.persist === "function") {
+      const original = storage.persist.bind(storage);
+      storage.persist = () => {
+        target.__persistCalls += 1;
+        return original();
+      };
+    }
+  });
+
   await newNote(page, "# 空间测试\n\n正文内容");
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
@@ -77,10 +91,25 @@ test("存储 dialog：用量、分解与排行", async ({ page }) => {
   await expect(page.getByTestId("storage-store-notes")).toContainText("笔记（1）");
   await expect(page.getByTestId("storage-note-ranking")).toContainText("空间测试");
   await expect(page.getByTestId("storage-overview")).toContainText("本应用数据");
+  // 数据分解里不再显示「本应用数据合计」
+  await expect(page.getByTestId("storage-overview")).not.toContainText("本应用数据合计");
+  // 持久化由应用自动申请：不暴露按钮，也不显示状态行
+  await expect(page.getByTestId("storage-persist")).toHaveCount(0);
+  await expect(page.getByTestId("storage-persistence")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __persistCalls: number }).__persistCalls)).toBeGreaterThan(0);
 
   // 大 dialog 尺寸：桌面下宽度应明显超过旧的小对话框（560px 上限）
   const box = await page.getByTestId("storage-dialog-content").boundingBox();
   expect(box?.width ?? 0).toBeGreaterThan(600);
+
+  // 切换四个 tab 时宽度必须固定，不能被内容撑大/缩小
+  const widths: number[] = [];
+  for (const tab of ["overview", "sync", "image", "backup"]) {
+    await page.getByTestId(`storage-tab-${tab}`).click();
+    const rect = await page.getByTestId("storage-dialog-content").boundingBox();
+    widths.push(rect?.width ?? 0);
+  }
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1);
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("storage-dialog-content")).toBeHidden();
@@ -137,10 +166,12 @@ test("备份：导出 .dat → 清空 → 导入恢复", async ({ page }) => {
 test("图床：切换到 img.scdn.io 后粘贴图片写外链，失败回退本地", async ({ page }) => {
   let failUpload = false;
   let sawImageField = false;
+  let uploadDelay = 0;
 
   await page.route("https://img.scdn.io/**", async (route) => {
     const body = route.request().postDataBuffer()?.toString("latin1") ?? "";
     if (body.includes('name="image"')) sawImageField = true;
+    if (uploadDelay > 0) await new Promise((resolve) => setTimeout(resolve, uploadDelay));
     if (failUpload) {
       await fulfillJson(route, 500, { success: false, error: "boom" });
       return;
@@ -158,11 +189,45 @@ test("图床：切换到 img.scdn.io 后粘贴图片写外链，失败回退本�
   await expect(page.getByTestId("storage-image-warning")).toContainText("60 天");
   await page.getByTestId("storage-dialog-close").click();
 
-  // 成功：正文写外链，不产生本地附件
+  // 成功：上传期间显示阻塞式环形进度，Esc 不能关闭
+  uploadDelay = 700;
   await dropPng(page);
+  await expect(page.getByTestId("task-progress")).toBeVisible();
+  await expect(page.getByTestId("task-progress-title")).toContainText("正在上传图片");
+  // 标题下显示网络速度，而不是数字进度与文件名
+  const meta = page.getByTestId("task-progress-meta");
+  await expect(meta).not.toContainText("dot.png");
+  await expect(meta).not.toContainText("0 / 1");
+  await expect(meta).toContainText(/正在连接|\/s/);
+  // 进度浮层必须居中（全局 * { margin: 0 } 会覆盖 UA 的 dialog 居中）
+  const card = await page
+    .getByTestId("task-progress")
+    .locator(".task-progress-card")
+    .boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(card).toBeTruthy();
+  expect(Math.abs(card!.x + card!.width / 2 - viewport.width / 2)).toBeLessThan(2);
+  expect(Math.abs(card!.y + card!.height / 2 - viewport.height / 2)).toBeLessThan(2);
+
+  // 圆角卡片不能被 dialog 的 overflow:auto 裁成直角阴影；文字也不能被拖选（蓝色选区）
+  const dialogStyle = await page
+    .getByTestId("task-progress")
+    .evaluate((el) => getComputedStyle(el).overflow);
+  expect(dialogStyle).toBe("visible");
+  await page.mouse.move(card!.x + 8, card!.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(card!.x + card!.width - 8, card!.y + card!.height - 8, { steps: 6 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("task-progress")).toBeVisible();
+
   await expect
     .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 5_000 })
     .toContain("https://img.cdn1.vip/i/mock.webp");
+  await expect(page.getByTestId("task-progress")).toBeHidden();
+  uploadDelay = 0;
   expect(sawImageField).toBe(true);
   expect(await blobCount(page)).toBe(0);
 
@@ -177,6 +242,79 @@ test("图床：切换到 img.scdn.io 后粘贴图片写外链，失败回退本�
   await expect(page.getByText(/图床上传失败，已保存到本地/).first()).toBeVisible({
     timeout: 5_000,
   });
+  expect(await blobCount(page)).toBe(1);
+});
+
+test("图床迁移：全部上传到当前目标并改写引用", async ({ page }) => {
+  await page.route("https://img.scdn.io/**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await fulfillJson(route, 200, {
+      success: true,
+      data: { url: "https://img.cdn1.vip/i/migrated.webp" },
+    });
+  });
+
+  await newNote(page);
+  await dropPng(page);
+  await expect
+    .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 5_000 })
+    .toContain("clawclip://blob/");
+  expect(await blobCount(page)).toBe(1);
+
+  await openStorage(page);
+  await page.getByTestId("storage-tab-image").click();
+  await page.getByTestId("storage-image-host-scdn").click();
+  await page.getByTestId("storage-image-migrate-start").click();
+  await page.getByTestId("storage-image-migrate-confirm-button").click();
+
+  // 阻塞式进度：不可 Esc 关闭
+  await expect(page.getByTestId("task-progress")).toBeVisible();
+  await expect(page.getByTestId("task-progress-title")).toContainText("正在上传图片到图床");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("task-progress")).toBeVisible();
+
+  await expect(page.getByTestId("storage-image-migrate-message")).toContainText(
+    "已把 1 张本地图片迁移到图床",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("task-progress")).toBeHidden();
+  await expect(page.getByTestId("storage-image-migrate-summary")).toContainText("成功 1 张");
+
+  await page.getByTestId("storage-dialog-close").click();
+  await expect
+    .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 10_000 })
+    .toContain("https://img.cdn1.vip/i/migrated.webp");
+  expect(await blobCount(page)).toBe(0);
+});
+
+test("图床迁移：全部下载到当前目标并改写引用", async ({ page }) => {
+  await page.route("https://cdn.example.test/**", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { ...CORS_HEADERS, "content-type": "image/png" },
+      body: PNG,
+    }),
+  );
+
+  await newNote(page, "# 外链图片\n\n![x](https://cdn.example.test/pic.png)");
+  await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
+
+  await openStorage(page);
+  await page.getByTestId("storage-tab-image").click();
+  await page.getByTestId("storage-image-migrate-start").click();
+  await page.getByTestId("storage-image-migrate-confirm-button").click();
+
+  await expect(page.getByTestId("task-progress")).toBeVisible();
+  await expect(page.getByTestId("storage-image-migrate-message")).toContainText(
+    "已把 1 张外链图片下载到本地",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("task-progress")).toBeHidden();
+
+  await page.getByTestId("storage-dialog-close").click();
+  await expect
+    .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 10_000 })
+    .toContain("clawclip://blob/");
   expect(await blobCount(page)).toBe(1);
 });
 

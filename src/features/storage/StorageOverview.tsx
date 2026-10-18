@@ -59,8 +59,12 @@ export function StorageOverview({ open }: { open: boolean }) {
     }
   }, []);
 
+  // 打开时总是先尝试申请持久化（结果会反映在随后的报告里），不提供手动按钮
   useEffect(() => {
-    if (open) void load();
+    if (!open) return;
+    void requestPersistentStorage().finally(() => {
+      void load();
+    });
   }, [open, load]);
 
   // 打开期间数据变化：400ms 防抖后重算（与侧栏统计一致）
@@ -140,24 +144,7 @@ export function StorageOverview({ open }: { open: boolean }) {
           ) : (
             <p className="storage-hint">浏览器未提供配额信息（不影响本地使用）。</p>
           )}
-          <div className="storage-inline">
-            <span className="storage-hint">
-              持久化状态：{quota.persisted ? "已持久化，数据不易被自动清理" : "未持久化"}
-            </span>
-            {!quota.persisted && (
-              <button
-                type="button"
-                className="storage-btn"
-                data-testid="storage-persist"
-                onClick={async () => {
-                  await requestPersistentStorage();
-                  await load();
-                }}
-              >
-                申请持久化
-              </button>
-            )}
-          </div>
+
         </div>
       </section>
 
@@ -187,14 +174,6 @@ export function StorageOverview({ open }: { open: boolean }) {
                 <span className="storage-row-size">{formatBytes(row.usage.bytes)}</span>
               </div>
             ))}
-            <div className="storage-row">
-              <span className="material-symbols-outlined" aria-hidden="true">
-                functions
-              </span>
-              <span className="storage-row-label">本应用数据合计</span>
-              <span className="storage-row-spacer" />
-              <span className="storage-row-size">{formatBytes(report.appBytes)}</span>
-            </div>
             {report.orphanBytes > 0 && (
               <p className="storage-hint">
                 其中无引用附件 {formatBytes(report.orphanBytes)}，会在启动校准或导入后被回收。

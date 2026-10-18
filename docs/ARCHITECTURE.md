@@ -223,7 +223,8 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 - **统计口径**（`data/storageReport.ts`）：单只读事务读四张表；笔记/文件夹/meta 按 JSON
   UTF-8 字节估算，附件用 `size` + 元数据 JSON。附件归属以**正文引用**为真相源，共享附件在
   笔记排行中按引用笔记数均摊；总量只在 `blobs` 计一次。另列 `navigator.storage.estimate()`
-  的整站用量/配额与 `usageDetails.indexedDB`，UI 明确区分三种数字。
+  的整站用量/配额与 `usageDetails.indexedDB`，UI 明确区分三种数字。应用启动与打开 dialog 时
+  自动调用 `navigator.storage.persist()`（浏览器可能静默拒绝），不提供手动按钮或状态行。
 - **图片上传目标**（`data/imageHost.ts` + `stores/integrationStore.ts`）：默认写本地
   `blobs`；切到 `img.scdn.io` 后，`EditorPane.insertFiles` 对图片调用
   `POST /api/v1.php`（multipart 字段 `image`，无鉴权，串行限流 5 次/5 秒），成功插入外链，
@@ -232,6 +233,18 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
   附件；图片先上传图床并把快照副本里的 `clawclip://` 换成外链（结果缓存进
   `BlobRecord.remoteUrl`），本地笔记保持不变。快照超过 10MB 时按体积剔除最大的非图片附件
   （正文保留本地引用）直到达标；节点正文自身超限则拒绝推送。
+- **图床批量迁移**（`data/imageMigration.ts`）：方向跟随当前上传目标。上传：按正文引用找出
+  本地图片 →（复用 `remoteUrl` 或上传）→ 逐条笔记替换引用，blob 由引用计数归零自动回收；
+  下载：提取 Markdown/HTML 外链图片 →（复用 `sourceUrl` 或下载）→ `saveBlob` → 逐条笔记
+  替换为 `clawclip://`。**逐张一致、可重入**：中断后重跑只会处理剩余图片，不会产生悬空引用。
+  迁移前 `flushActiveEditor()` + `beginBulkMutation()`（换代际、drain），结束后
+  `finishBulkMutation()` 清缓存、重载树与当前笔记并让编辑器重挂载。
+- **阻塞式任务进度**（`stores/taskProgressStore.ts` + `TaskProgressOverlay`）：原生
+  `<dialog>.showModal()` 进入 top layer（可压在存储 dialog 之上），Esc 与遮罩均不可关闭，
+  环形进度条 + 文案；标题下显示**实时网络速度**（`utils/speed.ts` 的滑动窗口估算），
+  不显示数字进度与文件名。上传用 XHR 的 `upload.onprogress`（fetch 没有上传进度），
+  下载用 `ReadableStream` 逐块统计。任务期间注册 `beforeunload` 提醒；浏览器无法真正阻止
+  强制刷新，真正兜底的是迁移的幂等设计。
 - **导入/清空的写入代际**（`stores/notesStore.ts`）：导入与清空前先递增 `dataEpoch` 并
   `drainWrites()` 等待在途 upsert；`useMarkdownSession` 的防抖/卸载保存携带挂载时的
   epoch，代际不一致直接丢弃。`replaceAll()` 在单事务里清空 + 写入，避免「清空了却没写进去」。
@@ -241,11 +254,12 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
-  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端、导入语义等（286 例）。
-- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，61 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、速度计、导入语义等（299 例）。
+- **Playwright E2E**（chromium，dev server 带 `/claw-clip/` base，63 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
   文件夹折叠与删除确认/上传导入/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
-  全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）。
+  全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）/
+  图床双向迁移与阻塞式进度。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`；
   确定性信号用 `expect.poll` / `waitForSelector`。
 
