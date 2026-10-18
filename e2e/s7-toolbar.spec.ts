@@ -99,17 +99,48 @@ test("视图切换：编辑 / 分屏 / 预览", async ({ page }) => {
 
   await expect(page.getByTestId("source-pane")).toBeVisible();
   await expect(page.getByTestId("preview-pane")).toBeVisible();
+  await expect(page.getByTestId("md-toolbar")).toBeVisible();
 
+  // 仅预览：格式工具栏收起（无源码可格式化），保留在 DOM 里做高度过渡
   await page.getByTestId("btn-view-preview").click();
   await expect(page.getByTestId("source-pane")).toBeHidden();
   await expect(page.getByTestId("preview-pane")).toBeVisible();
+  await expect(page.getByTestId("md-toolbar-slot")).toHaveAttribute("data-hidden", "true");
+  await expect(page.getByTestId("md-toolbar")).toBeHidden();
 
   await page.getByTestId("btn-view-edit").click();
   await expect(page.getByTestId("source-pane")).toBeVisible();
   await expect(page.getByTestId("preview-pane")).toHaveCount(0);
+  await expect(page.getByTestId("md-toolbar-slot")).toHaveAttribute("data-hidden", "false");
+  await expect(page.getByTestId("md-toolbar")).toBeVisible();
 
   await page.getByTestId("btn-view-split").click();
   await expect(page.getByTestId("preview-pane")).toBeVisible();
+});
+
+test("视图默认值：桌面分屏，刷新后重置（不持久化）", async ({ page }) => {
+  await newNote(page);
+  await expect(page.getByTestId("preview-pane")).toBeVisible();
+
+  await page.getByTestId("btn-view-edit").click();
+  await expect(page.getByTestId("preview-pane")).toHaveCount(0);
+
+  // 刷新页面：会话内的选择不保留，回到桌面默认「编辑 + 实时预览」
+  await page.reload();
+  await page.waitForSelector(EDITOR, { timeout: 15_000 });
+  await expect(page.getByTestId("preview-pane")).toBeVisible();
+  await expect(page.getByTestId("source-pane")).toBeVisible();
+});
+
+test("视图默认值：移动端仅编辑", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await newNote(page);
+
+  await expect(page.getByTestId("source-pane")).toBeVisible();
+  await expect(page.getByTestId("preview-pane")).toHaveCount(0);
+  // 窄屏不提供分屏入口，仍可手动切到预览
+  await expect(page.getByTestId("btn-view-split")).toHaveCount(0);
+  await expect(page.getByTestId("btn-view-preview")).toBeVisible();
 });
 
 test("导出 HTML：编辑模式下按需渲染并生成独立文档", async ({ page }) => {

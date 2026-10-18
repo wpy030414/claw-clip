@@ -47,7 +47,6 @@ export const useSettingsStore = create<SettingsState>()(
         density: s.density,
         motion: s.motion,
         fontSize: s.fontSize,
-        viewMode: s.viewMode,
       }),
     },
   ),

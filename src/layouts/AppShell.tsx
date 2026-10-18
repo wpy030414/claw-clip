@@ -30,6 +30,24 @@ export function AppShell() {
     void loadTree();
   }, [loadFolders, loadTree]);
 
+  /**
+   * 全局文件拖放兜底：拖到没有自定义处理的位置（例如大纲页签、编辑器空白处）时
+   * 阻止浏览器直接打开文件把应用顶掉。真正消费文件的区域会各自 preventDefault 并处理。
+   */
+  useEffect(() => {
+    const isFileDrag = (e: globalThis.DragEvent) =>
+      Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const prevent = (e: globalThis.DragEvent) => {
+      if (isFileDrag(e)) e.preventDefault();
+    };
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
+
   // 跨区快捷键（编辑器内的文本格式化由 CodeMirror 处理）
   useHotkeys({
     "mod+n": () => void create(),

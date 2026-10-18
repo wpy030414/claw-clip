@@ -46,7 +46,7 @@ test("笔记树：新建文件夹 → 点击行开合 → 文件夹内/根级新
   await expect(page.locator("[data-testid^='note-link-']")).toHaveCount(2);
 });
 
-test("文件夹：双击不重命名、显式按钮重命名、不可嵌套、dialog 无关闭按钮", async ({ page }) => {
+test("文件夹：双击不重命名、三点菜单重命名、不可嵌套、dialog 无关闭按钮", async ({ page }) => {
   await page.goto("");
 
   // 建两个文件夹：第二个在第一个被选中时创建，仍必须落在根部
@@ -75,14 +75,37 @@ test("文件夹：双击不重命名、显式按钮重命名、不可嵌套、di
   await working.locator(".tree-name").dblclick();
   await expect(page.getByTestId("folder-edit-input")).toHaveCount(0);
 
-  // 显式点击重命名按钮才可以改名
+  // 三点菜单 → 重命名：输入框右侧出现确认/取消，三点按钮隐藏
   await working.hover();
-  await working.locator('[data-testid^="folder-rename-"]').click();
+  await working.locator('[data-testid^="folder-menu-"]').click();
+  await expect(page.getByTestId("folder-menu")).toBeVisible();
+  await expect(page.getByTestId("folder-menu-rename")).toBeVisible();
+  await expect(page.getByTestId("folder-menu-delete")).toBeVisible();
+  await page.getByTestId("folder-menu-rename").click();
+
   const renameInput = page.getByTestId("folder-edit-input");
   await expect(renameInput).toBeVisible();
+  await expect(page.getByTestId("folder-rename-confirm")).toBeVisible();
+  await expect(page.getByTestId("folder-rename-cancel")).toBeVisible();
+  await expect(working.locator('[data-testid^="folder-menu-"]')).toHaveCount(0);
+
   await renameInput.fill("工作二");
-  await renameInput.press("Enter");
+  await page.getByTestId("folder-rename-confirm").click();
   await expect(working).toContainText("工作二");
+  await working.hover();
+  await expect(working.locator('[data-testid^="folder-menu-"]')).toBeVisible();
+
+  // 取消（✕）不落库：名称保持，编辑态退出后三点按钮回归
+  await working.locator('[data-testid^="folder-menu-"]').click();
+  await page.getByTestId("folder-menu-rename").click();
+  const cancelInput = page.getByTestId("folder-edit-input");
+  await cancelInput.fill("不应保存");
+  await page.getByTestId("folder-rename-cancel").click();
+  await expect(page.getByTestId("folder-edit-input")).toHaveCount(0);
+  await expect(working).toContainText("工作二");
+  await expect(working).not.toContainText("不应保存");
+  await working.hover();
+  await expect(working.locator('[data-testid^="folder-menu-"]')).toBeVisible();
 
   // dialog：没有右上角关闭按钮，也没有底部操作区；文件夹选项说明不可嵌套
   await page.getByTestId("btn-new").click();
@@ -112,9 +135,10 @@ test("文件夹：删除走 M3E dialog 二次确认", async ({ page }) => {
   const folderRow = page.locator('[data-testid^="folder-row-"]').filter({ hasText: "待删" });
   await expect(folderRow).toBeVisible();
 
-  // 删除按钮打开 M3E dialog（不再走 window.confirm）
+  // 三点菜单 → 删除，打开 M3E dialog（不再走 window.confirm）
   await folderRow.hover();
-  await folderRow.locator('[data-testid^="folder-delete-"]').click();
+  await folderRow.locator('[data-testid^="folder-menu-"]').click();
+  await page.getByTestId("folder-menu-delete").click();
   await expect(page.getByTestId("delete-folder-dialog")).toBeVisible();
   await expect(page.getByTestId("delete-folder-content")).toContainText("待删");
 
@@ -124,7 +148,8 @@ test("文件夹：删除走 M3E dialog 二次确认", async ({ page }) => {
 
   // 再次确认删除后消失
   await folderRow.hover();
-  await folderRow.locator('[data-testid^="folder-delete-"]').click();
+  await folderRow.locator('[data-testid^="folder-menu-"]').click();
+  await page.getByTestId("folder-menu-delete").click();
   await page.getByTestId("delete-folder-confirm").click();
   await expect(
     page.locator('[data-testid^="folder-row-"]').filter({ hasText: "待删" }),
@@ -212,6 +237,41 @@ test("上传笔记：从「+」对话框选择文件导入", async ({ page }) =>
 
   await expect(page.getByTestId("editor-title")).toHaveText("对话框导入", { timeout: 10_000 });
   await expect(page.locator("[data-testid^='note-link-']")).toHaveCount(1);
+});
+
+test("拖文件到侧栏文档区：直接导入并打开", async ({ page }) => {
+  await page.goto("");
+
+  const body = page.getByTestId("note-tree-body");
+  const transfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(
+      new File(["# 拖入标题\n\n拖入正文内容"], "拖入导入.md", { type: "text/markdown" }),
+    );
+    return dt;
+  });
+
+  // 文件悬停：整块树区域给出「松开以导入」提示
+  await body.dispatchEvent("dragover", { dataTransfer: transfer });
+  await expect(page.getByTestId("file-drop-overlay")).toBeVisible();
+
+  await body.dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(page.getByTestId("file-drop-overlay")).toHaveCount(0);
+  await expect(page.getByTestId("editor-title")).toHaveText("拖入导入", { timeout: 10_000 });
+  await expect(page.getByTestId("md-preview").locator("h1").first()).toContainText("拖入标题");
+  await expect(page.locator("[data-testid^='note-link-']")).toHaveCount(1);
+
+  // 拖到已有笔记行上也成立：行内不拦截文件拖拽，冒泡到树容器统一导入
+  const second = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["# 第二份"], "第二份.md", { type: "text/markdown" }));
+    return dt;
+  });
+  const row = page.locator("[data-testid^='note-link-']").first();
+  await row.dispatchEvent("dragover", { dataTransfer: second });
+  await expect(page.getByTestId("file-drop-overlay")).toBeVisible();
+  await row.dispatchEvent("drop", { dataTransfer: second });
+  await expect.poll(async () => page.locator("[data-testid^='note-link-']").count()).toBe(2);
 });
 
 test("导入 Markdown → 新建笔记并进入编辑器", async ({ page }) => {

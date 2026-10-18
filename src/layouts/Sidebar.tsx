@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { globalConfig } from "@/config";
+import { usePresence } from "@/hooks/usePresence";
 import { NoteTree } from "@/features/notes/NoteTree";
 import { SidebarStats } from "@/features/notes/SidebarStats";
 import { OutlinePane } from "@/features/outline/OutlinePane";
@@ -67,7 +68,9 @@ export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
 
       {showOutline && (
         <div className="sidebar-top">
-          <div className="sidebar-tabs" role="tablist">
+          <div className="sidebar-tabs" role="tablist" data-tab={tab}>
+            {/* 滑动指示块：跟着页签平移，避免切换时底色硬闪 */}
+            <span className="sidebar-tabs-indicator" data-tab={tab} aria-hidden="true" />
             <button
               type="button"
               role="tab"
@@ -92,7 +95,10 @@ export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
         </div>
       )}
 
-      {activeTab === "outline" ? <OutlinePane /> : <NoteTree />}
+      {/* 页签内容：key 变化触发一次淡入 + 轻微位移，切换时不再硬切 */}
+      <div className="sidebar-panel" data-testid="sidebar-panel" data-tab={activeTab} key={activeTab}>
+        {activeTab === "outline" ? <OutlinePane /> : <NoteTree />}
+      </div>
 
       <footer className="sidebar-footer" data-testid="sidebar-footer">
         <SidebarStats />
@@ -114,15 +120,19 @@ export function SidebarBody({ showOutline = true }: SidebarBodyProps) {
   );
 }
 
-/** 桌面侧栏外壳：只在展开时渲染内容。 */
+/** 桌面侧栏外壳：展开/收起带宽度与透明度过渡，收起动画结束后才卸载。 */
 export function Sidebar() {
   const open = useUiStore((s) => s.sidebarOpen);
+  const presence = usePresence(open, 260);
 
-  if (!open) return null;
+  if (!presence.mounted) return null;
 
   return (
-    <aside className="app-sidebar" data-testid="app-sidebar">
-      <SidebarBody />
+    <aside className="app-sidebar" data-testid="app-sidebar" data-state={presence.state}>
+      {/* 内容固定 288px：宽度动画期间只裁剪，不让内部文字反复重排 */}
+      <div className="app-sidebar-inner">
+        <SidebarBody />
+      </div>
     </aside>
   );
 }

@@ -557,6 +557,17 @@ async function pdfToMarkdown(file: File): Promise<string> {
   return out.join("\n\n");
 }
 
+/** 可导入的扩展名：侧栏拖入、「上传笔记」文件选择共用同一份白名单。 */
+export const IMPORT_EXTENSIONS = ["md", "markdown", "txt", "docx", "pdf"] as const;
+/** `<input type="file" accept>` 用的扩展名串。 */
+export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(",");
+
+/** 文件名是否属于可导入格式（只看扩展名，不读内容）。 */
+export function isImportableFile(file: File): boolean {
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+  return (IMPORT_EXTENSIONS as readonly string[]).includes(ext);
+}
+
 /** 根据扩展名导入文件 → { title, content }。 */
 export async function importDocument(file: File): Promise<ImportedDocument> {
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();

@@ -2,7 +2,7 @@
  * uiStore 单测：UI 瞬态 + 确认对话框队列。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useUiStore } from "@/stores/uiStore";
+import { defaultViewMode, useUiStore } from "@/stores/uiStore";
 
 beforeEach(() => {
   useUiStore.setState({
@@ -12,6 +12,7 @@ beforeEach(() => {
     sidebarTab: "docs",
     commandPaletteOpen: false,
     tocOpen: true,
+    viewMode: null,
     confirmQueue: [],
   });
 });
@@ -45,6 +46,29 @@ describe("uiStore 基础 setter", () => {
   it("setCommandPalette", () => {
     useUiStore.getState().setCommandPalette(true);
     expect(useUiStore.getState().commandPaletteOpen).toBe(true);
+  });
+});
+
+describe("uiStore 编辑器视图（会话内瞬态）", () => {
+  it("默认值：桌面分屏、移动端仅编辑", () => {
+    expect(defaultViewMode(true)).toBe("split");
+    expect(defaultViewMode(false)).toBe("edit");
+  });
+
+  it("初始不记录用户选择（null → 由断点兜底）", () => {
+    expect(useUiStore.getState().viewMode).toBeNull();
+  });
+
+  it("setViewMode 记录手动选择，可重置回 null", () => {
+    useUiStore.getState().setViewMode("preview");
+    expect(useUiStore.getState().viewMode).toBe("preview");
+    useUiStore.getState().setViewMode(null);
+    expect(useUiStore.getState().viewMode).toBeNull();
+  });
+
+  it("视图选择不写 localStorage（刷新即重置）", () => {
+    useUiStore.getState().setViewMode("edit");
+    expect(localStorage.getItem("claw-clip-ui")).toBeNull();
   });
 });
 

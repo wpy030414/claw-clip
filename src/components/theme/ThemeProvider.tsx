@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { M3eTheme } from "@/components/m3e";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useThemeSync } from "@/hooks/useThemeSync";
+import { useThemeTransition } from "@/hooks/useThemeTransition";
 
 interface Props {
   children: ReactNode;
@@ -13,6 +14,7 @@ interface Props {
 
 export function ThemeProvider({ children }: Props) {
   useThemeSync(); // 顶层调一次，解析 auto → resolvedScheme
+  useThemeTransition(); // 明暗切换时开启一次短暂的颜色过渡
 
   const scheme = useSettingsStore((s) => s.scheme);
   const seedColor = useSettingsStore((s) => s.seedColor);

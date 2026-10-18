@@ -18,9 +18,10 @@ import { M3eDialog } from "@/components/m3e";
 import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
+import { usePresence } from "@/hooks/usePresence";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useUiStore } from "@/stores/uiStore";
+import { defaultViewMode, useUiStore, type ViewMode } from "@/stores/uiStore";
 import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
 import { hydrateMarkdown, releaseBlobUrls, saveBlob } from "@/data/blobStore";
 import {
@@ -47,15 +48,15 @@ interface Props {
 }
 
 type SaveState = "idle" | "saving" | "saved";
-type ViewMode = "edit" | "split" | "preview";
 
 export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const { value, loading, onChange } = useMarkdownSession(noteId);
   const activeNote = useNotesStore((s) => s.activeNote);
   const remove = useNotesStore((s) => s.remove);
   const fontsize = useSettingsStore((s) => s.fontSize);
-  const viewMode = useSettingsStore((s) => s.viewMode);
-  const setSetting = useSettingsStore((s) => s.set);
+  // 视图是会话内瞬态：刷新后回到「桌面分屏 / 移动仅编辑」，不用 localStorage 记住
+  const storedView = useUiStore((s) => s.viewMode);
+  const setViewMode = useUiStore((s) => s.setViewMode);
   const setOutline = useUiStore((s) => s.setOutline);
   const sidebarTab = useUiStore((s) => s.sidebarTab);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -66,9 +67,14 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // 移动端没有横向空间：split 退化为纯编辑，仍可手动切到预览
+  // 未手动选择时按断点取默认值；移动端没有横向空间，split 退化为纯编辑，仍可手动切到预览
+  const viewMode: ViewMode = storedView ?? defaultViewMode(isDesktop);
   const effectiveView: ViewMode = !isDesktop && viewMode === "split" ? "edit" : viewMode;
   const showPreview = effectiveView !== "edit";
+  const showToolbar = effectiveView !== "preview";
+  // 浮层/面板卸载前留出退场动画时间
+  const menuPresence = usePresence(menuOpen, 140);
+  const previewPresence = usePresence(showPreview, 220);
 
   const wordCount = useMemo(() => countWords(value), [value]);
   const { html, ready: htmlReady } = useRenderedMarkdown(value, showPreview);
@@ -222,14 +228,13 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   };
 
   const runCommand = (command: MarkdownCommand) => {
-    if (isDesktop && effectiveView === "preview") setSetting("viewMode", "split");
-    if (!isDesktop && effectiveView === "preview") setSetting("viewMode", "edit");
+    if (effectiveView === "preview") setViewMode(defaultViewMode(isDesktop));
     editorRef.current?.applyCommand(command);
     requestAnimationFrame(() => editorRef.current?.focus());
   };
 
   const changeView = (next: ViewMode) => {
-    setSetting("viewMode", next);
+    setViewMode(next);
     requestAnimationFrame(() => {
       if (next !== "preview") editorRef.current?.focus();
       else editorRef.current?.measure();
@@ -316,14 +321,20 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
           >
             <span className="material-symbols-outlined">more_horiz</span>
           </button>
-          {menuOpen && (
+          {menuPresence.mounted && (
             <>
               <div
                 className="editor-menu-backdrop"
+                data-state={menuPresence.state}
                 aria-hidden="true"
                 onClick={() => setMenuOpen(false)}
               />
-              <div className="editor-menu" role="menu" data-testid="editor-menu">
+              <div
+                className="editor-menu"
+                role="menu"
+                data-state={menuPresence.state}
+                data-testid="editor-menu"
+              >
                 <button
                   type="button"
                   role="menuitem"
@@ -362,7 +373,18 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
         </div>
       </header>
 
-      <MarkdownToolbar onCommand={runCommand} />
+      {/* 快捷工具行：常驻但可折叠，仅预览时收起（出现/消失都走同一条过渡） */}
+      <div
+        className="editor-toolbar-slot"
+        data-testid="md-toolbar-slot"
+        data-hidden={showToolbar ? "false" : "true"}
+        aria-hidden={!showToolbar}
+        inert={showToolbar ? undefined : true}
+      >
+        <div className="editor-toolbar-slot-inner">
+          <MarkdownToolbar onCommand={runCommand} />
+        </div>
+      </div>
 
       <div className="editor-workspace" data-view={effectiveView}>
         <section className="editor-source-pane" data-testid="source-pane">
@@ -386,8 +408,13 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
           )}
         </section>
 
-        {showPreview && (
-          <section className="editor-preview-pane" data-testid="preview-pane">
+        {previewPresence.mounted && (
+          <section
+            className="editor-preview-pane"
+            data-testid="preview-pane"
+            data-state={previewPresence.state}
+            aria-hidden={!showPreview}
+          >
             {htmlReady ? (
               <MarkdownPreview html={html} css={css} testId="md-preview" />
             ) : (

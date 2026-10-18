@@ -7,6 +7,18 @@ import { create } from "zustand";
 /** 侧栏页签：文档树 / 当前文件大纲。 */
 export type SidebarTab = "docs" | "outline";
 
+/** 编辑工作区视图：仅编辑 / 编辑+实时预览分屏 / 仅预览。 */
+export type ViewMode = "edit" | "split" | "preview";
+
+/**
+ * 视图默认值：桌面「编辑 + 实时预览」，移动端「仅编辑」。
+ *
+ * 只作为未手动选择时的兜底，不落 localStorage —— 刷新后回到默认态（会话内瞬态）。
+ */
+export function defaultViewMode(isDesktop: boolean): ViewMode {
+  return isDesktop ? "split" : "edit";
+}
+
 /** 大纲条目（由编辑器实时派生）。 */
 export interface OutlineItem {
   level: number;
@@ -41,6 +53,11 @@ interface UiState {
   commandPaletteOpen: boolean;
   /** 桌面大纲侧栏开关。 */
   tocOpen: boolean;
+  /**
+   * 用户手动选择的视图；null = 尚未选择，按断点取 defaultViewMode。
+   * 不持久化：刷新页面即回到默认态。
+   */
+  viewMode: ViewMode | null;
   confirmQueue: ConfirmRequest[];
 
   setDesktop: (v: boolean) => void;
@@ -49,6 +66,7 @@ interface UiState {
   setSidebarTab: (tab: SidebarTab) => void;
   setOutline: (items: OutlineItem[]) => void;
   setCommandPalette: (open: boolean) => void;
+  setViewMode: (mode: ViewMode | null) => void;
   toggleToc: () => void;
   setTocOpen: (open: boolean) => void;
   pushConfirm: (req: Omit<ConfirmRequest, "id">) => string;
@@ -63,6 +81,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   outline: [],
   commandPaletteOpen: false,
   tocOpen: true,
+  viewMode: null,
   confirmQueue: [],
 
   setDesktop: (v) => set({ isDesktop: v }),
@@ -71,6 +90,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   setOutline: (items) => set({ outline: items }),
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
+  setViewMode: (mode) => set({ viewMode: mode }),
   toggleToc: () => set({ tocOpen: !get().tocOpen }),
   setTocOpen: (open) => set({ tocOpen: open }),
   pushConfirm: (req) => {

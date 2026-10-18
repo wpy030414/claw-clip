@@ -37,3 +37,38 @@ body {
 m3e-snackbar {
   background-color: transparent;
 }
+
+/* ---------------- 动效 ---------------- */
+
+/*
+ * 明暗主题切换：tokens 是整体替换的，元素本身没有 transition，颜色会硬切。
+ * useThemeTransition 在切换前后给 <html> 打上 data-theme-transition，
+ * 这里只为这一小段时间开启颜色过渡，结束后恢复，避免常驻 `*` 过渡。
+ */
+html[data-theme-transition] *,
+html[data-theme-transition] *::before,
+html[data-theme-transition] *::after {
+  transition:
+    background-color 280ms ease,
+    background 280ms ease,
+    color 280ms ease,
+    border-color 280ms ease,
+    box-shadow 280ms ease,
+    outline-color 280ms ease,
+    fill 280ms ease,
+    stroke 280ms ease !important;
+}
+
+/* 系统开启「减少动态效果」时，所有装饰性动画/过渡退化为瞬时完成。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

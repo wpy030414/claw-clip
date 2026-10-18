@@ -16,6 +16,14 @@
   min-height: 0;
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
+  /* 切换文档时 EditorPane 以 key=noteId 重挂载：淡入代替硬切 */
+  animation: editor-pane-in 200ms ease both;
+}
+
+@keyframes editor-pane-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* ---------------- 顶栏 ---------------- */
@@ -141,6 +149,12 @@
   position: fixed;
   inset: 0;
   z-index: calc(var(--z-toolbar) - 1);
+  animation: editor-backdrop-in 140ms ease both;
+}
+
+.editor-menu-backdrop[data-state="closing"] {
+  animation: editor-backdrop-out 120ms ease both;
+  pointer-events: none;
 }
 
 .editor-menu {
@@ -155,6 +169,42 @@
   border-radius: 14px;
   background: var(--md-sys-color-surface-container-high);
   box-shadow: 0 8px 28px rgb(0 0 0 / 20%);
+  transform-origin: top right;
+}
+
+.editor-menu[data-state="open"] {
+  animation: editor-menu-in 160ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.editor-menu[data-state="closing"] {
+  animation: editor-menu-out 120ms ease both;
+  pointer-events: none;
+}
+
+@keyframes editor-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+
+@keyframes editor-menu-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes editor-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes editor-backdrop-out {
+  to {
+    opacity: 0;
+  }
 }
 
 .editor-menu-label {
@@ -204,6 +254,38 @@
 }
 
 /* ---------------- 工具栏 ---------------- */
+
+/*
+ * 工具行常驻在一个 1fr→0fr 的网格槽里：仅预览时收起。
+ * 用 grid-template-rows 过渡而不是卸载，出现和消失都有连续高度动画。
+ */
+.editor-toolbar-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  flex-shrink: 0;
+  overflow: hidden;
+  visibility: visible;
+  transition:
+    grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 160ms ease,
+    visibility 0s linear 0s;
+}
+
+.editor-toolbar-slot-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-toolbar-slot[data-hidden="true"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  /* 高度收完再隐藏，保证消失过程可见 */
+  transition:
+    grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 160ms ease,
+    visibility 0s linear 220ms;
+}
 
 .editor-toolbar {
   display: flex;
@@ -268,12 +350,18 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  /* 始终保留两列：预览列 0fr 时收起，列宽才能连续过渡 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0fr);
   overflow: hidden;
+  transition: grid-template-columns 260ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .editor-workspace[data-view="split"] {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.editor-workspace[data-view="preview"] {
+  grid-template-columns: minmax(0, 0fr) minmax(0, 1fr);
 }
 
 .editor-source-pane,
@@ -288,10 +376,17 @@
 
 .editor-source-pane {
   background: var(--md-sys-color-surface);
+  transition: opacity 200ms ease;
 }
 
+/* 仅预览：源码列收为 0fr，内容淡出后隐藏（不卸载，切回不丢撤销历史） */
 .editor-workspace[data-view="preview"] .editor-source-pane {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    visibility 0s linear 200ms;
 }
 
 .editor-workspace[data-view="split"] .editor-preview-pane {
@@ -306,6 +401,28 @@
 .editor-preview-pane {
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.editor-preview-pane[data-state="open"] {
+  animation: editor-preview-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.editor-preview-pane[data-state="closing"] {
+  animation: editor-preview-out 200ms ease both;
+}
+
+@keyframes editor-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+@keyframes editor-preview-out {
+  to {
+    opacity: 0;
+    transform: translateX(8px);
+  }
 }
 
 .md-editor-host {

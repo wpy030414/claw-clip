@@ -165,7 +165,8 @@ CodeMirror 6 是命令式 API，React 封装遵循：
   载入完成前不渲染编辑器（`loadedId === noteId`），避免以空文档挂载后无法回灌。
 - **不回流**：`updateListener` 只向上通知，不把父级 state 再 dispatch 回文档（避免 CJK 组合输入乱序）。
 - **分屏实时预览**：源码由 CodeMirror 渲染，右侧由 markdown-it 渲染同一份源码；预览渲染 120ms 防抖，
-  连续输入不重复渲染。视图三态（编辑 / 分屏 / 预览）持久化在 `settings.viewMode`，桌面默认 `split`。
+  连续输入不重复渲染。视图三态（编辑 / 分屏 / 预览）是 `uiStore.viewMode` 的会话内瞬态（不落 localStorage，刷新即重置），
+  桌面默认 `split`、移动端默认 `edit`；仅预览模式下隐藏格式工具栏。
 - **格式工具栏**（`MarkdownToolbar` + `markdownCommands.ts`）：工具栏只发出纯命令，纯函数把
   「文档 + 选区」映射为 CodeMirror 的 `changes`/`selection`，可脱离 DOM 单测；编辑器只负责 dispatch。
 - **格式化**（更多菜单第一项，`utils/markdownFormat.ts`）：`formatMarkdown()` 是幂等纯函数，
@@ -177,7 +178,10 @@ CodeMirror 6 是命令式 API，React 封装遵循：
   显式传 `root: document` 把样式表挂到文档根（见 ADR-022）。
 - **行号**：CodeMirror `lineNumbers()` 常驻，gutter 透明底、等宽字，`highlightActiveLineGutter()` 让光标所在行号用 on-surface 深色加粗；行号用 flex 在 28px 行高内垂直居中。
 - **Mermaid**：未命中 highlight.js 的代码块也保留 `language-*` 类，`MarkdownPreview` 据此把 ```mermaid 懒加载渲染为 SVG。
-- **视图切换不卸载编辑器**：仅预览时源码面板用 CSS 隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
+- **视图切换不卸载编辑器**：仅预览时源码列收为 `0fr`、面板淡出隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
+- **动效**：条件渲染的浮层统一走 `hooks/usePresence`（延迟卸载 + `data-state` 关键帧）；
+  侧栏用宽度/透明度过渡，页签用滑动指示块，工具行走 grid 行高折叠，笔记新建/删除用
+  entering/exiting 关键帧；明暗切换只在 320ms 窗口内为子树开启颜色过渡（见 ADR-040）。
 - **按需加载**：markdown-it/KaTeX/highlight.js 仅在需要预览/导出时动态 import；
   Mermaid、docx（含 `docx/math`）、mammoth、pdfjs 均为动态 import，不进入首屏。
 - **文件入口**：`paste`/`drop` 由 `EditorView.domEventHandlers` 拦截，交给上层存 blob 后插入引用。
