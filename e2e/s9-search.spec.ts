@@ -70,7 +70,7 @@ test("输入关键词显示树形结果", async ({ page }) => {
   await expect(page.locator(".search-palette__current")).toHaveText("当前");
 });
 
-test("键盘导航：树行移动、展开与回车跳转", async ({ page }) => {
+test("键盘导航：上下键移动、回车展开与跳转", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
 
@@ -93,15 +93,15 @@ test("键盘导航：树行移动、展开与回车跳转", async ({ page }) => 
   await page.keyboard.press("ArrowDown");
   await expect(matches.first()).toHaveAttribute("data-selected", "true");
 
-  // ← 回到父文章
-  await page.keyboard.press("ArrowLeft");
+  // ↑ 回到父文章（切换目标只走上下键）
+  await page.keyboard.press("ArrowUp");
   await expect(articles.first()).toHaveAttribute("data-selected", "true");
 
-  // ↓ 到第二篇文章，→ 展开，再 ↓ 进入它的叶子
+  // ↓ 到第二篇文章，回车展开，再 ↓ 进入它的叶子
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await expect(articles.nth(1)).toHaveAttribute("data-selected", "true");
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
   await expect(articles.nth(1)).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("ArrowDown");
   await expect(matches.nth(1)).toHaveAttribute("data-selected", "true");
@@ -111,6 +111,103 @@ test("键盘导航：树行移动、展开与回车跳转", async ({ page }) => 
   await expect(page.locator(PALETTE)).toBeHidden();
   await expect(page).toHaveURL(/\/n\//);
   await expect(page.locator(EDITOR)).toContainText("搜索关键词");
+});
+
+test("左右键只移动输入光标，不切换或收起结果行", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
+
+  await createNote(page, "# 光标测试\n\nabcdef 是搜索词");
+  await search(page, "abcdef");
+
+  const input = page.locator(PALETTE).locator("input");
+  const article = page.locator(".search-palette__article").first();
+  await expect(article).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(article).toHaveAttribute("data-selected", "true");
+
+  const caretOf = () => input.evaluate((el) => (el as HTMLInputElement).selectionStart ?? -1);
+  const before = await caretOf();
+
+  // ← 只把插入符左移，选中行与展开态都不变
+  await page.keyboard.press("ArrowLeft");
+  await expect(article).toHaveAttribute("data-selected", "true");
+  await expect(article).toHaveAttribute("aria-expanded", "true");
+  expect(await caretOf()).toBe(before - 1);
+
+  // → 把插入符移回末尾
+  await page.keyboard.press("ArrowRight");
+  await expect(article).toHaveAttribute("data-selected", "true");
+  expect(await caretOf()).toBe(before);
+});
+
+test("正则搜索：斜杠包裹时按正则匹配", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
+
+  await createNote(page, "# 正则测试\n\n12 第一行\n345 第二行\nxx 不是数字开头");
+
+  await search(page, "/^\\d\\d/");
+  const article = page.locator(".search-palette__article").first();
+  await expect(article).toContainText("2 处匹配");
+
+  const matches = page.locator(".search-palette__match");
+  await expect(matches).toHaveCount(2);
+  await expect(matches.nth(0)).toContainText("12 第一行");
+  await expect(matches.nth(1)).toContainText("345 第二行");
+
+  // 输入框里显示的是原始正则，而不是命中子串
+  await expect(page.locator(PALETTE).locator("input")).toHaveValue("/^\\d\\d/");
+});
+
+test("非法正则：结果卡内提示错误而不是空态", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
+
+  await page.keyboard.press("Control+f");
+  await page.locator(PALETTE).locator("input").fill("/(/");
+
+  const error = page.locator(".search-palette__message--error");
+  await expect(error).toBeVisible();
+  await expect(error).toContainText("正则表达式无效");
+  await expect(page.locator(".search-palette__article")).toHaveCount(0);
+});
+
+test("关闭搜索面板时播放退场动画", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
+
+  await page.keyboard.press("Control+f");
+  const overlay = page.locator(".search-palette-overlay");
+  await expect(overlay).toBeVisible();
+
+  // 监听 data-state 变为 closing：证明元素在关闭后仍被保留用于播放动画
+  await page.evaluate(() => {
+    const state = window as unknown as { __searchClosingSeen?: boolean };
+    state.__searchClosingSeen = false;
+    const el = document.querySelector(".search-palette-overlay");
+    if (!el) return;
+    const observer = new MutationObserver(() => {
+      if (el.getAttribute("data-state") === "closing") {
+        state.__searchClosingSeen = true;
+        observer.disconnect();
+      }
+    });
+    observer.observe(el, { attributes: true, attributeFilter: ["data-state"] });
+  });
+
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(
+    () => (window as unknown as { __searchClosingSeen?: boolean }).__searchClosingSeen === true,
+    null,
+    { timeout: 2000 },
+  );
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __searchClosingSeen?: boolean }).__searchClosingSeen,
+    ),
+  ).toBe(true);
+  await expect(overlay).toBeHidden();
 });
 
 test("Esc 关闭搜索面板并清理输入", async ({ page }) => {
@@ -157,6 +254,37 @@ test("点击命中叶子：跳转文章并精确滚动到匹配位置", async ({
   await expect(page.locator(".cm-line").filter({ hasText: "目标关键词" })).toBeInViewport();
   expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("目标关键词");
+});
+
+test("跨文章跳转：先切换文章再精确定位命中", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("m3e-theme")).toBeAttached({ timeout: 10_000 });
+
+  const lines = Array.from(
+    { length: 80 },
+    (_, i) => `第 ${i + 1} 行填充内容，用于制造足够的滚动距离。`,
+  ).join("\n");
+  await createNote(page, `# 跨文章目标\n\n${lines}\n\n这里是跨文章跳转的关键词，应该被选中。`);
+  const targetPath = new URL(page.url()).pathname;
+
+  // 切到另一篇文章后再发起搜索，确保命中目标不在当前文章
+  await createNote(page, "# 当前文章\n\n这里没有目标词。");
+  await search(page, "跨文章跳转的关键词");
+
+  await expect(page.locator(".search-palette__article")).toHaveCount(1);
+  const match = page.locator(".search-palette__match").first();
+  await expect(match).toBeVisible();
+  await match.click();
+
+  await expect(page.locator(PALETTE)).toBeHidden();
+  await expect.poll(() => new URL(page.url()).pathname).toBe(targetPath);
+  await expect(page.locator(EDITOR)).toContainText("跨文章目标");
+
+  // 切到目标文章后仍然精确滚动并选中命中文本
+  const scroller = page.locator(".cm-scroller");
+  await expect(page.locator(".cm-line").filter({ hasText: "跨文章跳转的关键词" })).toBeInViewport();
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("跨文章跳转的关键词");
 });
 
 test("当前文章永远置顶并默认展开", async ({ page }) => {

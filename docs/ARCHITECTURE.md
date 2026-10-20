@@ -87,22 +87,33 @@ Ctrl/Cmd+F → uiStore.setSearchOpen(true)
   → SearchPalette：未输入时只有胶囊输入框
   → 用户输入 → 150ms 防抖
   → flushActiveEditor()：当前编辑器实时正文先落库
-  → searchAllNotes(keyword, { currentNoteId })
+  → compileSearchQuery(term)
+      · 普通关键词：转义正则元字符，按字面量、大小写不敏感匹配
+      · /exp/：编译为正则（i + m），^/$ 按行生效；语法错误直接展示在结果卡
+  → searchAllNotes(term, { currentNoteId })
   → getAllOf<Note> 读取全量笔记
   → 正文 CRLF/CR 归一为 LF（与 CodeMirror 坐标系一致）
   → 内存过滤 + 文章评分（标题×10 + 正文×命中次数 + 标签×3）
   → 为每处命中生成 offset / length / 上下文片段（叶子按局部相关度排序）
   → 当前文章置顶；其余按 score 降序，同分新文章优先
   → 渲染「文章根 + 命中叶」树，当前文章默认展开
-  → 点击/回车叶子 → uiStore.setSearchJump({ noteId, from, to })
-  → navigate(`/n/${id}`) + 关闭面板
+  → 点击/回车叶子 → 关闭面板并播放 160ms 退场动画
+  → 动画结束（dialog 离开 top layer）
+      · 同一文章：uiStore.setSearchJump({ noteId, from, to })
+      · 跨文章：先 navigate(`/n/${id}`)，路由落到目标 noteId 后再 setSearchJump
   → EditorPane 在笔记载入后 selectRange(from, to) + 平滑滚动到命中位置
 ```
 
 面板是 M3E 风格的 Spotlight 式布局：未输入只有 999px 胶囊输入框，输入后下方拉出
-24px 圆角结果卡；当前文章置顶并默认展开，文章为根、命中为叶。命中偏移使用正文的
-UTF-16 偏移，并把 CRLF/CR 归一成 LF 后再计算（与 CodeMirror 的文档坐标系一致），
-保证点击后选中并滚动到准确位置；仅预览时先切到分屏/编辑再滚动。因为要继承
+24px 圆角结果卡；当前文章置顶并默认展开，文章为根、命中为叶。上下键在可见行之间
+切换目标，左右键不拦截、只移动输入框光标，回车展开/收起文章或打开命中。命中偏移
+使用正文的 UTF-16 偏移，并把 CRLF/CR 归一成 LF 后再计算（与 CodeMirror 的文档坐标系
+一致），保证点击后选中并滚动到准确位置；仅预览时先切到分屏/编辑再滚动。跳转要等
+关闭动画结束、dialog 离开 top layer 后再写入 `searchJump`，否则模态层会拦截
+`view.focus()`，选区无法落到 DOM 上。跨文章时还要先完成路由切换、等 SearchPalette
+观察到目标 `noteId` 后再写跳转：EditorPane 用 `noteId` 校验目标归属，若与 `navigate()`
+同时写入，外部 store 的同步渲染可能先拿旧 `noteId` 跑一次 effect，把目标误判为
+「用户已离开」并消费掉。因为要继承
 `<m3e-theme>` 上的 `--md-sys-color-*`，浮层不 portal 到 `body`，而是挂在
 AppShell 内，用原生 `<dialog>.showModal()` 进入 top layer 后自绘；这也保证
 它能盖在「存储空间 / 主题」等已打开的 M3E modal 之上（z-index 管不到 top layer）。

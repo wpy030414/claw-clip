@@ -5,6 +5,9 @@
  * 命中级另有局部相关度，用于「文章为根、命中为叶」树中的叶子排序：
  * 标题 > 标签 > 正文标题行 > 正文。
  *
+ * 默认按字面量、大小写不敏感匹配；当输入被一对斜杠包裹（`/exp/`）时切换为正则，
+ * 正则在文本中命中的子串（而非输入本身）决定偏移与长度。
+ *
  * 每条正文命中都带 UTF-16 字符偏移与高亮片段，供搜索结果精确定位到编辑器。
  * 本地量级（数百~数千条笔记）在内存里过滤完全够用，不引入 FTS。
  */
@@ -79,6 +82,74 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** 搜索模式：字面量 / 用户显式包裹的正则。 */
+export type SearchQueryMode = "plain" | "regex";
+
+/** 编译成功的搜索词。 */
+export interface CompiledSearchQuery {
+  ok: true;
+  mode: SearchQueryMode;
+  /** 标题/标签匹配：非全局，可安全重复 `test`。 */
+  test: RegExp;
+  /** 正文扫描：全局，调用前需要把 `lastIndex` 归零。 */
+  global: RegExp;
+}
+
+/** 编译失败的搜索词（目前只有非法正则）。 */
+export interface InvalidSearchQuery {
+  ok: false;
+  mode: "regex";
+  /** 可直接展示给用户的错误信息。 */
+  error: string;
+}
+
+/**
+ * 解析搜索输入。
+ *
+ * - 普通模式：整体按字面量匹配，大小写不敏感（与旧行为一致）；
+ * - 正则模式：**仅当**输入以一对斜杠包裹时启用，如 `/^\d\d/`；
+ *   斜杠不配对、或想搜字面量斜杠时，请直接输入（如 `a/b`）。
+ *   正则同样大小写不敏感，并默认开启多行模式（`^`/`$` 匹配每一行的首尾，
+ *   与代码编辑器的搜索习惯一致）；正文使用全局副本逐处命中。
+ *
+ * 输入为空（或只有空白）时返回 `null`。
+ */
+export function compileSearchQuery(input: string): CompiledSearchQuery | InvalidSearchQuery | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  const isRegex = raw.length >= 2 && raw.startsWith("/") && raw.endsWith("/");
+  if (!isRegex) {
+    const source = escapeRegExp(raw);
+    return {
+      ok: true,
+      mode: "plain",
+      test: new RegExp(source, "i"),
+      global: new RegExp(source, "gi"),
+    };
+  }
+
+  const pattern = raw.slice(1, -1);
+  if (!pattern) {
+    return { ok: false, mode: "regex", error: "正则表达式不能为空，例如 /^\\d\\d/" };
+  }
+
+  try {
+    return {
+      ok: true,
+      mode: "regex",
+      test: new RegExp(pattern, "im"),
+      global: new RegExp(pattern, "gim"),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      mode: "regex",
+      error: `正则表达式无效：${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
 /**
  * 生成一条命中的上下文片段，并只高亮这一条。
  *
@@ -127,12 +198,11 @@ export async function searchAllNotes(
   keyword: string,
   options: SearchOptions = {},
 ): Promise<SearchResult[]> {
-  const kw = keyword.trim();
-  if (!kw) return [];
+  const compiled = compileSearchQuery(keyword);
+  // 空输入与非法正则都不产生结果；UI 可通过 compileSearchQuery 拿到具体错误。
+  if (!compiled || !compiled.ok) return [];
 
-  // 标题/标签只需要判断是否命中；正文需要全局匹配拿偏移。
-  const containsRe = new RegExp(escapeRegExp(kw), "i");
-  const contentRe = new RegExp(escapeRegExp(kw), "gi");
+  const { test: containsRe, global: contentRe } = compiled;
   const currentNoteId = options.currentNoteId ?? null;
 
   const notes = await getAllOf<Note>(globalConfig.storeNames.notes);
@@ -143,14 +213,14 @@ export async function searchAllNotes(
     let matchCount = 0;
 
     // —— 标题 ——
-    const titleHit = containsRe.test(note.title);
+    const titleHit = note.title.match(containsRe);
     if (titleHit) {
       matchCount++;
       matches.push({
         kind: "title",
         text: note.title,
         offset: null,
-        length: kw.length,
+        length: titleHit[0].length,
         inHeading: false,
         snippet: "",
         score: SCORE_TITLE,
@@ -158,14 +228,17 @@ export async function searchAllNotes(
     }
 
     // —— 标签 ——
-    const matchedTags = note.tags.filter((tag) => containsRe.test(tag));
-    for (const tag of matchedTags) {
+    let tagHitCount = 0;
+    for (const tag of note.tags) {
+      const tagHit = tag.match(containsRe);
+      if (!tagHit) continue;
+      tagHitCount++;
       matchCount++;
       matches.push({
         kind: "tag",
         text: tag,
         offset: null,
-        length: kw.length,
+        length: tagHit[0].length,
         inHeading: false,
         snippet: "",
         score: SCORE_TAG,
@@ -186,6 +259,9 @@ export async function searchAllNotes(
       const length = m[0].length;
       contentHits++;
 
+      // 零宽匹配（如 /^/）没有可高亮、可跳转的文本，只计入总数，不生成叶子。
+      if (length === 0) continue;
+
       // 超量结果仍要计数，但只为前 MATCH_SCAN_LIMIT 条生成片段
       if (matches.length >= MATCH_SCAN_LIMIT) continue;
 
@@ -205,7 +281,7 @@ export async function searchAllNotes(
     }
     matchCount += contentHits;
 
-    const score = (titleHit ? 10 : 0) + contentHits + (matchedTags.length > 0 ? 3 : 0);
+    const score = (titleHit ? 10 : 0) + contentHits + (tagHitCount > 0 ? 3 : 0);
     if (score === 0) continue;
 
     matches.sort(compareMatches);

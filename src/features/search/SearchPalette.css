@@ -38,6 +38,28 @@
 /* Spotlight 式背景压暗：只做明度遮罩，不做 Liquid Glass 模糊 */
 .search-palette-overlay::backdrop {
   background: color-mix(in srgb, var(--md-sys-color-scrim, #000) 26%, transparent);
+  animation: search-backdrop-in 140ms ease both;
+}
+
+/* 关闭时先播退场关键帧，再由 usePresence 卸载（见 SearchPalette.tsx） */
+.search-palette-overlay[data-state="closing"] {
+  pointer-events: none;
+}
+
+.search-palette-overlay[data-state="closing"]::backdrop {
+  animation: search-backdrop-out 160ms ease both;
+}
+
+@keyframes search-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes search-backdrop-out {
+  to {
+    opacity: 0;
+  }
 }
 
 /* 原生 dialog 未 open 时保持隐藏，避免 showModal() 之前闪出一帧 */
@@ -176,11 +198,39 @@
   }
 }
 
+/* 退场：输入框与结果卡先后收回，和入场方向对称 */
+.search-palette-overlay[data-state="closing"] .search-palette__field {
+  animation: search-pill-out 160ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.search-palette-overlay[data-state="closing"] .search-palette__results {
+  animation: search-results-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes search-pill-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+}
+
+@keyframes search-results-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
 .search-palette__message {
   padding: 28px 20px;
   color: var(--md-sys-color-on-surface-variant);
   font-size: 14px;
   text-align: center;
+}
+
+/* 非法正则：用 error 色提示，不进入「未找到」空态 */
+.search-palette__message--error {
+  color: var(--md-sys-color-error);
 }
 
 /* —— 可点击行 —— */

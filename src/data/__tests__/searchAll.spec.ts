@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { searchAllNotes } from "../searchAll";
+import { searchAllNotes, compileSearchQuery } from "../searchAll";
 import { openDB } from "../db";
 import type { Note } from "@/types/note";
 
@@ -420,6 +420,119 @@ describe("searchAllNotes", () => {
 
       const results = await searchAllNotes("React", { currentNoteId: "note-current" });
       expect(results.map((r) => r.id)).toEqual(["note-current", "note-strong"]);
+    });
+  });
+
+  describe("正则搜索", () => {
+    it("两斜杠包裹时按正则匹配，偏移与长度指向真实命中", async () => {
+      const content = "订单 12 已创建\n\n订单 345 已归档";
+      await insertNote(createNote({ id: "note-1", content }));
+
+      const results = await searchAllNotes("/订单 \\d+/");
+      expect(results).toHaveLength(1);
+
+      const matches = results[0].matches.filter((m) => m.kind === "content");
+      expect(matches.map((m) => m.text)).toEqual(["订单 12", "订单 345"]);
+      for (const match of matches) {
+        expect(content.slice(match.offset!, match.offset! + match.length)).toBe(match.text);
+      }
+    });
+
+    it("多行模式：^ 匹配每一行行首", async () => {
+      await insertNote(
+        createNote({
+          id: "note-1",
+          content: "12 abc\n345 def\nxx 99",
+        }),
+      );
+
+      const results = await searchAllNotes("/^\\d\\d/");
+      expect(results).toHaveLength(1);
+      expect(results[0].matchCount).toBe(2);
+      expect(results[0].matches.filter((m) => m.kind === "content").map((m) => m.text)).toEqual([
+        "12",
+        "34",
+      ]);
+    });
+
+    it("正则大小写不敏感，命中文本保留原文大小写", async () => {
+      await insertNote(
+        createNote({
+          id: "note-1",
+          content: "REACT hooks 与 React 组件",
+        }),
+      );
+
+      const results = await searchAllNotes("/react/");
+      const matches = results[0].matches.filter((m) => m.kind === "content");
+      expect(matches.map((m) => m.text)).toEqual(["REACT", "React"]);
+    });
+
+    it("正则同时作用于标题与标签", async () => {
+      await insertNote(
+        createNote({
+          id: "note-1",
+          title: "2026 年度计划",
+          tags: ["2026", "年度"],
+          content: "无关内容",
+        }),
+      );
+
+      const results = await searchAllNotes("/^2026/");
+      expect(results).toHaveLength(1);
+      expect(results[0].matches.map((m) => m.kind)).toEqual(["title", "tag"]);
+    });
+
+    it("零宽匹配只计数，不生成空叶子", async () => {
+      await insertNote(createNote({ id: "note-1", content: "a\nb\nc" }));
+
+      // 前瞻断言是零宽的：命中位置没有可高亮、可跳转的文本
+      const results = await searchAllNotes("/(?=c)/");
+      expect(results).toHaveLength(1);
+      expect(results[0].matchCount).toBe(1);
+      expect(results[0].matches).toHaveLength(0);
+    });
+
+    it("斜杠未成对时按字面量处理", async () => {
+      await insertNote(createNote({ id: "note-1", content: "路径是 /path/to/file" }));
+
+      expect(await searchAllNotes("/path")).toHaveLength(1);
+      expect(await searchAllNotes("path")).toHaveLength(1);
+    });
+
+    it("普通模式的正则元字符按字面量匹配", async () => {
+      await insertNote(createNote({ id: "note-1", content: "C++ 与 a.b" }));
+      await insertNote(createNote({ id: "note-2", content: "axb 不含目标" }));
+
+      const results = await searchAllNotes("a.b");
+      expect(results.map((r) => r.id)).toEqual(["note-1"]);
+      expect(await searchAllNotes("C++")).toHaveLength(1);
+    });
+
+    it("非法或空正则返回空结果，并给出可展示的错误", async () => {
+      await insertNote(createNote({ id: "note-1", content: "1 2 3" }));
+
+      expect(await searchAllNotes("/(/")).toEqual([]);
+      const invalid = compileSearchQuery("/(/");
+      expect(invalid?.ok).toBe(false);
+      if (invalid && !invalid.ok) expect(invalid.error).toContain("正则表达式无效");
+
+      const empty = compileSearchQuery("//");
+      expect(empty?.ok).toBe(false);
+    });
+
+    it("空输入不产生编译结果", () => {
+      expect(compileSearchQuery("   ")).toBeNull();
+    });
+
+    it("普通模式编译为大小写不敏感的字面量正则", () => {
+      const compiled = compileSearchQuery("a.b");
+      expect(compiled?.ok).toBe(true);
+      if (compiled?.ok) {
+        expect(compiled.mode).toBe("plain");
+        expect(compiled.test.test("A.B")).toBe(true);
+        expect(compiled.test.test("AXB")).toBe(false);
+      }
     });
   });
 });
