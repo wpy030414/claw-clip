@@ -1459,3 +1459,21 @@ E2E 覆盖「上传期间进度浮层可见且 Esc 无法关闭」「全部上�
 **后果**：DOCX/PDF/TXT/HTML 导入的笔记正文开头多三行元数据，预览/导出/字数/搜索都按 ADR-054 隐藏它，但 MD 导出与备份会逐字节带上——这是有意的，导出后标题不丢。front matter 的 `title` 与 `importDocument()` 已返回的文件名一致，因此笔记标题不变，只是把来源文件名落进正文、可被导出与投影消费。HTML 导入的质量取决于源站结构：依赖脚本渲染、或正文藏在 `<style>`/canvas 里的页面只会得到很少内容。
 
 **验证**：`exchange.spec.ts` 覆盖 TXT/HTML 导入补 front matter、脚本被丢弃、内联图片转为 Markdown 引用、Markdown 原文逐字节保留、DOCX 图片 token 与 front matter 共存；E2E `s6-workstation.spec.ts` 覆盖 HTML 导入的标题、预览渲染、front matter 落盘与脚本不残留，以及 Markdown 导入不补 front matter；`vp check` / `vp test run` / `pnpm run build` / Playwright 全绿。
+
+## ADR-058 · 应用滚动条统一为 M3E overlay 形态（自绘缩略条，不占内容宽度） ✅
+
+**背景**：应用里纵向滚动容器（笔记树、大纲、CodeMirror 源码、实时预览、搜索结果卡、存储 dialog 内容、自定义 CSS 输入框）各自用浏览器原生滚动条：Windows 上约 17px 宽、样式粗糙，还会实实在在挤掉内容宽度（分屏源码列尤其明显）。少数容器手写了 `scrollbar-width: thin` / `scrollbar-color`，但各写各的、明暗观感也不一致。M3E 自身只提供基于原生 `scrollbar-*` 的细滚动条（`<m3e-scroll-container>` 与各组件内部），依旧占宽度，无法满足「不挤内容」的诉求。
+
+**决策**：
+
+- **隐藏原生条 + 自绘 overlay**：`styles/scrollbar.css` 对上述容器统一 `scrollbar-width: none` 并隐藏 `::-webkit-scrollbar`；滚动指示改由 `hooks/useOverlayScrollbar.ts` 在 DOM 上画一条 M3E 风格缩略条——8px 宽、999px 全圆角、无轨道、`color-mix(--md-sys-color-on-surface 30%/46%)` 两档明度，悬停/滚动时浮现（`opacity` 140ms 过渡），空闲约 0.9s 后淡出，可拖拽、滚轮落在缩略条上转发给容器。
+- **缩略条挂在滚动容器的定位父级**，不挂容器内部：容器内的绝对定位元素会随内容滚走。父级若为 `static` 会被临时设为 `relative`（卸载还原）。位置用 offset 链求「相对 host 内边距盒」的布局坐标，天然免疫祖先 transform；offset 链在跨 shadow boundary / fixed 祖先时会断裂（M3eDialog 的 `.base` 正是 shadow DOM 内的 fixed 元素），此时回退到 `getBoundingClientRect` 差值并除以 host 缩放（移动端 `.note-list-pane { zoom }` 的 rect 是视觉 px，rail 尺寸用布局 px）。
+- **CodeMirror 特例**：滚动发生在内层 `.cm-scroller`（`view.scrollDOM`），缩略条挂外壳 `.md-editor-host`（为此给它补 `position: relative`）。
+- **生成内容例外**：预览正文里的横向滚动块（代码块/公式/图表）由 markdown 渲染产出，无法挂 overlay，保留原生滚动条但统一收成 M3E 细条（`scrollbar-width: thin` + 圆角 thumb + 透明轨道）。`storage-tabs` / `editor-toolbar` 的横向滚动维持既有「完全隐藏」策略。
+- **几何计算抽纯函数**：缩略条长度/偏移/可见性由 `utils/scrollbar.ts` 的 `computeScrollbarThumb()` 计算，不碰 DOM，便于单测。
+
+**理由**：纯 CSS 无法在 Windows/Chromium 上得到「不占宽度的 overlay 滚动条」——`overflow: overlay` 早已废弃，`scrollbar-*` 仍占位；要同时满足「M3E 观感」和「不挤内容」只能自绘。把缩略条挂父级而非包一层 wrapper，是为了不改动现有 flex/grid 布局与大量 `> *` 子选择器（如 `.note-tree-body > * + *`），改动面最小。逐容器接入（而非全局 MutationObserver 自动接管）让每个滚动区的宿主与 z-index 都可控，也避开动态生成内容反复挂卸的开销与不确定性。
+
+**后果**：缩略条浮在内容右缘约 10px（8px 条 + 2px 内缩）之上，各滚动容器右侧需留白避免遮挡正文（现有 padding 足够）。缩略条是装饰性 overlay（`aria-hidden`），不参与无障碍树；键盘/滚轮/触摸滚动仍走原生，无功能损失，但读屏软件不再播报原生滚动条状态。自绘缩略条只在悬停/滚动时出现，静止且未悬停时不可见——这是刻意的 M3E 行为，与常驻原生条不同。
+
+**验证**：`utils/__tests__/scrollbar.spec.ts`（10 例）覆盖占比缩放、最小长度、轨道过短、顶/底/越界偏移、NaN 与未布局尺寸；E2E `s10-scrollbar.spec.ts` 覆盖源码滚动条不占宽（`clientWidth == offsetWidth`、`scrollbar-width: none`）、缩略条圆角与滚动浮现、拖拽带动滚动、预览与笔记树同样隐藏原生条。各容器（源码/预览/笔记树/大纲/存储 dialog/主题输入框/搜索结果/移动端 zoom）经 Playwright 量测缩略条与容器内缘对齐（偏差 ≤1px，源于 1px 边框或亚像素舍入）。`vp check` / `vp test run`（405 例）/ `pnpm run build` / Playwright 全绿。

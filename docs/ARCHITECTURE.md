@@ -223,6 +223,12 @@ settingsStore.customCss
 - 预览/导出内置「书籍排版」样式（`features/preview/themes.ts`），是 HTML/DOCX/PDF 的共同排版来源；
   不再提供独立的「打印主题」配置入口，避免预览与导出各走一套样式。
 - Markdown 渲染开启原始 HTML（`html:true`），手写 HTML 原样进入预览/导出；**有意不做 XSS 过滤**（见 ADR-033）。
+- 滚动条统一为 overlay 形态：`styles/scrollbar.css` 隐藏各滚动容器的原生条，
+  `useOverlayScrollbar` 在滚动容器的**定位父级**上自绘 8px 圆角缩略条（颜色取
+  `color-mix(... --md-sys-color-on-surface ...)`，随主题明暗变化），悬停/滚动时浮现、空闲自动淡出。
+  好处是不占内容宽度；例外是预览区代码块/公式/Mermaid 这类**生成内容**的横向滚动，
+  仍走原生 thin 条。坐标由 offset 链计算，跨 shadow 边界或 fixed 祖先时回退到
+  `getBoundingClientRect` 差值并除以 host 缩放（移动端 `zoom`），详见 ADR-058。
 
 ## 5. 编辑器封装（MarkdownEditor★）
 
@@ -376,6 +382,9 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | `src/utils/frontMatter.ts`                  | front matter 识别/剥离 + title/tags 轻量投影            |
 | `src/features/preview/themes.ts`            | 内置预览/导出排版 CSS                                   |
 | `src/features/theme/ThemeDialog.tsx`        | 主题设置：自定义页面 CSS 编辑与持久化                   |
+| `src/utils/scrollbar.ts`                    | 缩略条几何纯函数（尺寸/偏移/是否可滚）                  |
+| `src/hooks/useOverlayScrollbar.ts`          | overlay 滚动条：挂载、定位、拖拽、自动隐藏              |
+| `src/styles/scrollbar.css`                  | 隐藏原生滚动条 + M3E 缩略条样式                         |
 
 ## 10. 已知限制
 

@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { M3eDialog } from "@/components/m3e";
 import { toastError } from "@/components/common/Snackbar";
 import { useCreateNote } from "@/hooks/useCreateNote";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 import { IMPORT_ACCEPT, isImportableFile } from "@/data/exchange";
 import { useImportDocument } from "@/hooks/useImportDocument";
 import { useNotesStore } from "@/stores/notesStore";
@@ -89,6 +90,9 @@ export function NoteTree() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commitLock = useRef(false);
   const cancelRef = useRef(false);
+  /** 滚动容器元素：交给 overlay 滚动条（原生条会挤掉树行宽度）。 */
+  const [treeBody, setTreeBody] = useState<HTMLDivElement | null>(null);
+  useOverlayScrollbar(treeBody);
 
   // —— 笔记拖拽：拖进文件夹 / 拖到空白处移出 ——
   const draggingIdRef = useRef<string | null>(null);
@@ -818,6 +822,7 @@ export function NoteTree() {
   return (
     <div className="note-tree" data-testid="note-tree">
       <div
+        ref={setTreeBody}
         className="note-tree-body"
         data-testid="note-tree-body"
         data-drop-root={dragOverRoot && draggingInsideFolder ? "true" : "false"}

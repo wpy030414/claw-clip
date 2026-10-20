@@ -5,6 +5,7 @@ import { datasource } from "@/data/datasource";
 import "@/styles/fonts.css";
 import "@/styles/global.css";
 import "@/styles/tokens.css";
+import "@/styles/scrollbar.css";
 import "@/styles/layout.css";
 import "katex/dist/katex.min.css";
 

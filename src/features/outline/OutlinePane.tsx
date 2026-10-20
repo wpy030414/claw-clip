@@ -1,5 +1,7 @@
 /** 侧栏「大纲」页签：当前文件标题树，点击跳转（编辑视图落编辑器，仅预览落预览）。 */
+import { useState } from "react";
 import { useUiStore, type OutlineItem } from "@/stores/uiStore";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 import {
   getActiveEditorValue,
   jumpToOutline,
@@ -29,6 +31,8 @@ async function jumpTo(item: OutlineItem, index: number): Promise<void> {
 
 export function OutlinePane() {
   const outline = useUiStore((s) => s.outline);
+  const [pane, setPane] = useState<HTMLElement | null>(null);
+  useOverlayScrollbar(pane);
 
   if (outline.length === 0) {
     return (
@@ -39,7 +43,7 @@ export function OutlinePane() {
   }
 
   return (
-    <nav className="outline-pane" data-testid="outline-pane" aria-label="大纲">
+    <nav ref={setPane} className="outline-pane" data-testid="outline-pane" aria-label="大纲">
       {outline.map((item, i) => (
         <button
           key={`${item.pos}-${i}`}

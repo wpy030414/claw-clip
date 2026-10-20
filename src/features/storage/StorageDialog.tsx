@@ -6,6 +6,7 @@
  */
 import { useState, type CSSProperties } from "react";
 import { M3eDialog } from "@/components/m3e";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 import { useUiStore } from "@/stores/uiStore";
 import { BackupSection } from "./BackupSection";
 import { CloudSyncSection } from "./CloudSyncSection";
@@ -34,6 +35,9 @@ export function StorageDialog() {
   const open = useUiStore((s) => s.storageDialogOpen);
   const setOpen = useUiStore((s) => s.setStorageDialogOpen);
   const [section, setSection] = useState<Section>("overview");
+  /** dialog 内容区是滚动容器，overlay 缩略条挂到 .storage-dialog 上（同一 top layer）。 */
+  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
+  useOverlayScrollbar(bodyEl);
 
   return (
     <M3eDialog
@@ -64,7 +68,7 @@ export function StorageDialog() {
           ))}
         </div>
 
-        <div className="storage-body">
+        <div ref={setBodyEl} className="storage-body">
           {section === "overview" && <StorageOverview open={open} />}
           {section === "sync" && <CloudSyncSection />}
           {section === "image" && <ImageHostSection />}

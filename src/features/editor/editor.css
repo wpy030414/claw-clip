@@ -349,6 +349,7 @@
 /* ---------------- 工作区 ---------------- */
 
 .editor-workspace {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
@@ -411,7 +412,6 @@
 
 .editor-preview-pane {
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .editor-preview-pane[data-state="open"] {
@@ -437,6 +437,8 @@
 }
 
 .md-editor-host {
+  /* overlay 缩略条的定位上下文：CodeMirror 的滚动发生在内层 .cm-scroller */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;

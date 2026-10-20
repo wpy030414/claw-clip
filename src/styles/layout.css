@@ -173,7 +173,6 @@ m3e-theme {
   min-height: 0;
   overflow-y: auto;
   padding: 0 8px 16px;
-  scrollbar-width: thin;
 }
 
 /* 新建行与树行同组，粘在列表顶部 */

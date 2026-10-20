@@ -6,7 +6,9 @@
  * AppShell 上，不随侧栏收起或断点切换卸载。
  */
 import type { CSSProperties } from "react";
+import { useState } from "react";
 import { M3eDialog } from "@/components/m3e";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import "@/features/theme/theme.css";
@@ -31,6 +33,9 @@ export function ThemeDialog() {
   const setOpen = useUiStore((s) => s.setThemeDialogOpen);
   const customCss = useSettingsStore((s) => s.customCss);
   const set = useSettingsStore((s) => s.set);
+  /** 自定义 CSS 输入框自己滚动，overlay 缩略条挂到 .theme-dialog 上。 */
+  const [cssInput, setCssInput] = useState<HTMLTextAreaElement | null>(null);
+  useOverlayScrollbar(cssInput);
 
   return (
     <M3eDialog
@@ -46,6 +51,7 @@ export function ThemeDialog() {
           会作用在整个页面（侧栏、编辑器与预览）。输入即时生效，并通过本地设置持久保存；留空则使用内置样式。
         </p>
         <textarea
+          ref={setCssInput}
           className="theme-css-input"
           data-testid="theme-css-input"
           aria-label="自定义页面 CSS"

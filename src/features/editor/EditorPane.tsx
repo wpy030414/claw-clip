@@ -19,6 +19,7 @@ import { useMarkdownSession } from "@/hooks/useMarkdownSession";
 import { useRenderedMarkdown } from "@/hooks/useRenderedMarkdown";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { usePresence } from "@/hooks/usePresence";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 import { useNotesStore } from "@/stores/notesStore";
 import { useIntegrationStore } from "@/stores/integrationStore";
 import { useTaskProgressStore } from "@/stores/taskProgressStore";
@@ -109,6 +110,13 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   const previewPresence = usePresence(showPreview, 220);
 
   const previewPaneRef = useRef<HTMLElement | null>(null);
+  /** 预览面板是滚动容器本身，overlay 缩略条挂到它的父级 .editor-workspace 上。 */
+  const [previewScroller, setPreviewScroller] = useState<HTMLElement | null>(null);
+  const attachPreviewPane = useCallback((el: HTMLElement | null) => {
+    previewPaneRef.current = el;
+    setPreviewScroller(el);
+  }, []);
+  useOverlayScrollbar(previewScroller);
   /** 仅预览时点击大纲：标题还没渲染出来（预览 120ms 防抖）就先挂起，等 HTML 到位再跳。 */
   const pendingPreviewJump = useRef<OutlineJumpTarget | null>(null);
 
@@ -687,7 +695,7 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
             data-testid="preview-pane"
             data-state={previewPresence.state}
             aria-hidden={!showPreview}
-            ref={previewPaneRef}
+            ref={attachPreviewPane}
           >
             {htmlReady ? (
               <MarkdownPreview html={html} css={css} testId="md-preview" />

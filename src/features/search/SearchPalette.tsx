@@ -38,6 +38,7 @@ import {
   type SearchResult,
 } from "@/data/searchAll";
 import { usePresence } from "@/hooks/usePresence";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { flushActiveEditor } from "@/features/editor/activeEditor";
 import "./SearchPalette.css";
@@ -128,6 +129,9 @@ export function SearchPalette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  /** 结果卡是滚动容器本身，overlay 缩略条挂到 .search-palette 上。 */
+  const [resultsEl, setResultsEl] = useState<HTMLDivElement | null>(null);
+  useOverlayScrollbar(resultsEl);
 
   // 关闭后保持挂载 CLOSE_ANIMATION_MS，播放退场动画再卸载；
   // 系统开启「减少动态效果」时动画已被全局压到 1ms，无需再等模态层
@@ -432,6 +436,7 @@ export function SearchPalette() {
 
         {showResults && (
           <div
+            ref={setResultsEl}
             className="search-palette__results"
             id="search-palette-results"
             role="tree"

@@ -6,7 +6,7 @@
  *
  * 工具栏命令通过 `applyCommand` 暴露给上层；参数与纯函数实现见 markdownCommands.ts。
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { EditorState } from "@codemirror/state";
 import {
   EditorView,
@@ -30,6 +30,7 @@ import {
   type MarkdownCommand,
 } from "./markdownCommands";
 import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
+import { useOverlayScrollbar } from "@/hooks/useOverlayScrollbar";
 
 /** 大纲跳转贴顶时保留的留白（与旧 scrollIntoView 的 yMargin 一致）。 */
 const SCROLL_MARGIN = 24;
@@ -247,6 +248,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
   onChangeRef.current = onChange;
   onFilesRef.current = onFiles;
 
+  /**
+   * CodeMirror 的滚动发生在内层 `.cm-scroller`（`view.scrollDOM`），外壳 `.md-editor-host`
+   * 才是定位上下文：overlay 缩略条挂外壳，否则会被编辑器内部布局裁掉/随内容滚走。
+   */
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  useOverlayScrollbar(scroller, hostRef.current);
+
   useEffect(() => {
     if (!hostRef.current) return;
     const view = new EditorView({
@@ -317,6 +325,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
       }),
     });
     viewRef.current = view;
+    setScroller(view.scrollDOM);
     return () => {
       view.destroy();
       viewRef.current = null;
