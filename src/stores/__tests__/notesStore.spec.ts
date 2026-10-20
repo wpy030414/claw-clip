@@ -335,3 +335,57 @@ describe("notesStore 数据代际与导入", () => {
     expect((await datasource.getNote(id))!.content).toBe("# 本地较新");
   });
 });
+
+describe("notesStore front matter 投影", () => {
+  const content = [
+    "---",
+    "title: 属性标题",
+    "tags: [工作, 笔记]",
+    "description: 不应进入摘要",
+    "---",
+    "",
+    "# 正文标题",
+    "",
+    "正文内容。",
+  ].join("\n");
+
+  it("title / tags / wordCount / excerpt 均由正文投影", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content });
+
+    const note = (await datasource.getNote(id))!;
+    expect(note.title).toBe("属性标题");
+    expect(note.tags).toEqual(["工作", "笔记"]);
+    expect(note.wordCount).toBe(8);
+    expect(note.excerpt).toBe("正文标题 正文内容。");
+    // 原文（含 front matter）仍逐字节落库
+    expect(note.content).toBe(content);
+  });
+
+  it("显式 title 优先于 front matter（导入文件名等调用方意图）", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content, title: "显式标题" });
+    expect(useNotesStore.getState().activeNote!.title).toBe("显式标题");
+  });
+
+  it("删除 tags 键会清空投影；没有 front matter 时保留原有标签", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, { content });
+
+    await useNotesStore.getState().saveNote(id, { content: "---\ntitle: 属性标题\n---\n\n正文" });
+    expect(useNotesStore.getState().activeNote!.tags).toEqual([]);
+
+    // 手动标签（未来 UI）在正文没有 tags 声明时不会被内容编辑抹掉
+    await useNotesStore.getState().saveNote(id, { tags: ["手动"] });
+    await useNotesStore.getState().saveNote(id, { content: "---\ntitle: 属性标题\n---\n\n新正文" });
+    expect(useNotesStore.getState().activeNote!.tags).toEqual(["手动"]);
+  });
+
+  it("front matter 里的附件引用仍计入 attachmentIds", async () => {
+    const id = await useNotesStore.getState().createNote();
+    await useNotesStore.getState().saveNote(id, {
+      content: "---\ncover: clawclip://blob/cover-1\n---\n\n正文",
+    });
+    expect(useNotesStore.getState().activeNote!.attachmentIds).toEqual(["cover-1"]);
+  });
+});

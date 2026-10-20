@@ -147,3 +147,43 @@ describe("GitHub 警报框", () => {
     expect(renderMarkdown("> [!note] 小写")).toContain("md-alert md-alert-note");
   });
 });
+
+describe("YAML front matter", () => {
+  const source = [
+    "---",
+    "title: 属性标题",
+    "tags: [工作, 笔记]",
+    "---",
+    "",
+    "# 正文标题",
+    "",
+    "正文内容。",
+  ].join("\n");
+
+  it("预览不输出 front matter 内容，也不产生水平线", () => {
+    const html = renderMarkdown(source);
+    expect(html).not.toContain("属性标题");
+    expect(html).not.toContain("tags:");
+    expect(html).not.toContain("<hr");
+    expect(html).toContain("<h1>正文标题</h1>");
+    expect(html).toContain("<p>正文内容。</p>");
+  });
+
+  it("大纲不会凭空多出 Setext 伪标题，且正文标题偏移仍正确", () => {
+    const items = extractOutline(source);
+    expect(items.map((i) => i.text)).toEqual(["正文标题"]);
+    expect(source.slice(items[0].pos, items[0].pos + 1)).toBe("#");
+  });
+
+  it("支持 ... 闭合与 CRLF", () => {
+    const html = renderMarkdown("---\r\ntitle: x\r\n...\r\n# 标题\r\n");
+    expect(html).not.toContain("title:");
+    expect(html).toContain("<h1>标题</h1>");
+  });
+
+  it("未闭合时按普通 Markdown 渲染（编辑中的半成品可见）", () => {
+    const html = renderMarkdown("---\ntitle: 半成品\n\n正文");
+    expect(html).toContain("title: 半成品");
+    expect(html).toContain("<p>正文</p>");
+  });
+});

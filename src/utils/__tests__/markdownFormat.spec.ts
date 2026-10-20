@@ -85,3 +85,50 @@ describe("formatMarkdown 幂等", () => {
     expect(formatMarkdown(once)).toBe(once);
   });
 });
+
+describe("formatMarkdown 与 front matter", () => {
+  it("front matter 内容原样保留，只格式化正文", () => {
+    const source = [
+      "---",
+      "title: 属性标题",
+      "tags: [工作, 笔记]",
+      "description: |",
+      "  # 不是标题",
+      "  - 不是列表",
+      "---",
+      "#标题",
+    ].join("\n");
+
+    expect(formatMarkdown(source)).toBe(
+      [
+        "---",
+        "title: 属性标题",
+        "tags: [工作, 笔记]",
+        "description: |",
+        "  # 不是标题",
+        "  - 不是列表",
+        "---",
+        "",
+        "# 标题",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("区块与正文之间统一为一个空行（多空行压缩、缺空行补齐）", () => {
+    expect(formatMarkdown("---\ntitle: x\n---\n\n\n\n# 标题\n")).toBe(
+      "---\ntitle: x\n---\n\n# 标题\n",
+    );
+    expect(formatMarkdown("---\ntitle: x\n---\n# 标题\n")).toBe("---\ntitle: x\n---\n\n# 标题\n");
+  });
+
+  it("只有 front matter 的文档保持原样（结尾恰好一个换行）", () => {
+    expect(formatMarkdown("---\ntitle: x\n---\n\n\n")).toBe("---\ntitle: x\n---\n");
+  });
+
+  it("格式化两次结果不变", () => {
+    const source = "---\ntitle: x\n---\n\n\n#标题\n";
+    const once = formatMarkdown(source);
+    expect(formatMarkdown(once)).toBe(once);
+  });
+});

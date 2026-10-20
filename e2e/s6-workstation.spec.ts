@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 
 /**
@@ -286,6 +287,57 @@ test("导入 Markdown → 新建笔记并进入编辑器", async ({ page }) => {
   await expect(page.getByTestId("md-preview").locator("h1").first()).toContainText("导入标题", {
     timeout: 10_000,
   });
+  // 没有 tags 时不渲染空 chip 行
+  await expect(page.getByTestId("note-tags")).toHaveCount(0);
+});
+
+test("front matter：导入取 title、预览隐藏、MD 导出保留原文", async ({ page }) => {
+  await page.goto("");
+
+  const content = [
+    "---",
+    "title: 属性标题",
+    "tags: [工作, 笔记]",
+    "---",
+    "",
+    "# 正文标题",
+    "",
+    "正文内容。",
+  ].join("\n");
+
+  await page.getByTestId("import-input").setInputFiles({
+    name: "带属性.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(content, "utf-8"),
+  });
+
+  // front matter 的 title 优先于文件名
+  await expect(page.getByTestId("editor-title")).toHaveText("属性标题", { timeout: 10_000 });
+
+  // 侧栏笔记行：正文预览下方以 chip 展示 front matter 的 tags
+  const row = page.locator("[data-testid^='note-link-']").first();
+  await expect(row.getByTestId("note-tags")).toBeVisible();
+  await expect(row.getByTestId("note-tags")).toContainText("#工作");
+  await expect(row.getByTestId("note-tags")).toContainText("#笔记");
+
+  // 预览只渲染正文；元数据与分隔线不出现
+  const preview = page.getByTestId("md-preview");
+  await expect(preview.locator("h1").first()).toContainText("正文标题");
+  await expect(preview).not.toContainText("tags:");
+  await expect(preview).not.toContainText("属性标题");
+
+  // 源码编辑区保留原文，可继续编辑
+  await expect(page.locator(EDITOR)).toContainText("tags: [工作, 笔记]");
+
+  // MD 导出逐字节保留 front matter（导入导出闭环）
+  await page.getByTestId("btn-menu").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 10_000 }),
+    page.getByTestId("menu-export-md").click(),
+  ]);
+  const exported = readFileSync((await download.path())!, "utf-8");
+  expect(exported).toContain("---\ntitle: 属性标题");
+  expect(exported).toContain("tags: [工作, 笔记]");
 });
 
 test("导出 Markdown 与 DOCX", async ({ page }) => {

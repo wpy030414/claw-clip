@@ -16,7 +16,12 @@
  * 7. 引用：`>文本` / `>>文本` → `> 文本` / `> > 文本`；
  * 8. 连续空行压缩为 1 行（围栏代码块内不压缩）；
  * 9. 结尾统一为恰好 1 个换行；空白文档返回空串。
+ *
+ * **front matter 整段原样跳过**：YAML 块里的 `#` 与 `- ` 不是 Markdown，
+ * 一旦进入格式化规则会被改写并破坏元数据。只统一换行（与全文一致），
+ * 内容、缩进、键序全部保留；区块与正文之间保证恰好一个空行。
  */
+import { parseFrontMatter } from "@/utils/frontMatter";
 
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
 const HR_RE = /^\s{0,3}(?:(\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$/;
@@ -80,11 +85,25 @@ export function formatMarkdown(source: string): string {
   if (!source.trim()) return "";
 
   const normalized = source.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const frontMatter = parseFrontMatter(normalized);
+
+  if (!frontMatter.present) return formatBody(normalized);
+
+  // front matter 原文（含分隔线）整段保留，只格式化其后的正文
+  const raw = normalized.slice(0, frontMatter.end);
+  const body = formatBody(normalized.slice(frontMatter.end));
+  // 区块与正文之间统一为一个空行；raw 已自带闭合行的换行
+  return body ? `${raw}\n${body}` : raw;
+}
+
+/** 格式化纯 Markdown 正文（不含 front matter）。 */
+function formatBody(source: string): string {
+  if (!source.trim()) return "";
 
   const out: string[] = [];
   let fence: string | null = null; // 当前所在围栏代码块的标记字符（` 或 ~）
 
-  for (const raw of normalized.split("\n")) {
+  for (const raw of source.split("\n")) {
     const fenceMatch = raw.match(FENCE_RE);
     if (fenceMatch) {
       const marker = fenceMatch[1][0];

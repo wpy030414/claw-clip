@@ -40,7 +40,7 @@
 用户输入 → CodeMirror 6 updateListener（docChanged）
   → useMarkdownSession.onChange
   → debounce(700ms) → notesStore.saveActive
-  → 重算派生字段（title/wordCount/excerpt/attachmentIds）
+  → 重算派生字段（title/wordCount/excerpt/tags/attachmentIds；title 优先取 front matter）
   → noteCache 同步更新（内存真相源）→ datasource.upsertNote → IndexedDB put（原地更新，不改 id）
 ```
 
@@ -93,6 +93,7 @@ Ctrl/Cmd+F → uiStore.setSearchOpen(true)
   → searchAllNotes(term, { currentNoteId })
   → getAllOf<Note> 读取全量笔记
   → 正文 CRLF/CR 归一为 LF（与 CodeMirror 坐标系一致）
+  → 解析 front matter：title/tags 以正文声明为准；正文命中跳过元数据区间、保留绝对偏移
   → 内存过滤 + 文章评分（标题×10 + 正文×命中次数 + 标签×3）
   → 为每处命中生成 offset / length / 上下文片段（叶子按局部相关度排序）
   → 当前文章置顶；其余按 score 降序，同分新文章优先
@@ -171,9 +172,10 @@ iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜
 **笔记树行**：`NoteTree` 把「新建」行放进滚动容器作为首项，并用
 `position: sticky; top: 0` 吸顶（背景与面板一致，内容不会透出）。每条笔记行是两行结构：
 标题 + `relativeTime(updatedAt)`，下一行是 `NoteSummary.excerpt`（stripMarkdown 后单行、
-80 字上限，CSS 再省略到一行）。同一层级内按 `updatedAt` 倒序；`saveNote` 会先比对
-content/title/tags/folderId/pinned，**未发生变化时直接返回**，因此打开/关闭笔记不会刷新
-`updatedAt`、也不会打乱排序。
+80 字上限，CSS 再省略到一行）；有标签时在预览下方再加一行只读 chip（`#tag`，单行不换行、
+超出裁切，悬停 `title` 给出完整列表；选中行用 surface 底色与 `secondaryContainer` 行底色区分）。
+同一层级内按 `updatedAt` 倒序；`saveNote` 会先比对 content/title/tags/folderId/pinned，
+**未发生变化时直接返回**，因此打开/关闭笔记不会刷新 `updatedAt`、也不会打乱排序。
 
 **文件夹与拖拽**：文件夹不允许嵌套，`NoteTree` 只渲染根级文件夹（`loadFolders` 会把历史
 `parentId` 归一化为 null 并落库）。文件夹行没有展开箭头，点击整行切换开合，`folder`/
@@ -231,6 +233,14 @@ CodeMirror 6 是命令式 API，React 封装遵循：
 - **GitHub 警报框**：`markdownRender` 的 core 规则把 `> [!NOTE]` 等块引用改写为
   `div.md-alert.md-alert-<type>` + 标题段落；样式在共享的 `DEFAULT_PREVIEW_CSS` 里，
   预览/HTML/PDF 同源，DOCX 在 `blockChildren()` 单独处理。
+- **YAML front matter**：`utils/frontMatter.ts` 识别文档开头**闭合**的 `---`/`...` 区块，
+  给出原文区间、行数与 `title`/`tags` 的轻量投影。markdown-it 块级规则在 `table` 之前整段跳过，
+  预览/HTML/PDF/DOCX 因此都不显示元数据，`extractOutline` 也不会把 `title: x` + 关闭线
+  误解析成 Setext 标题；`deriveTitle/countWords/makeExcerpt` 先剥离再计算；保存时
+  `notesStore` 把 `title`/`tags` 投影进 `Note`（`title` 优先于 H1，`tags` 仅在正文声明了
+  `tags` 键时覆盖库里值）。搜索用同一投影，并跳过 front matter 区间、保留绝对偏移。
+  未知键、注释、键序、引号风格原样保留；MD 导出与备份逐字节保真；`formatMarkdown`
+  整段跳过（否则块标量里的 `#`/`-` 会被当 Markdown 改写）。未闭合时按普通正文处理。
 - **视图切换不卸载编辑器**：仅预览时源码列收为 `0fr`、面板淡出隐藏，切回后 `requestMeasure()` 重算布局，文档与撤销历史不丢。
 - **大纲跳转**：点击时用编辑器**实时正文**重解析标题位置（旧偏移会因附件插入/连续输入而落错行），
   再按当前视图选落点：编辑/分屏 → CodeMirror `scrollTo`，仅预览 → 预览面板 `scrollIntoView`
@@ -304,10 +314,11 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
-  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、速度计、导入语义等（299 例）。
-- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，63 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、速度计、导入语义、
+  front matter 投影等（373 例）。
+- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，79 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
-  文件夹折叠与删除确认/上传导入/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
+  文件夹折叠与删除确认/上传导入/front matter 导入与导出保真/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
   全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）/
   图床双向迁移与阻塞式进度。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`；
@@ -322,28 +333,29 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 ## 9. 关键文件索引
 
-| 文件                                        | 职责                                                  |
-| ------------------------------------------- | ----------------------------------------------------- |
-| `src/data/db.ts` / `local.ts` / `query.ts`  | IndexedDB 连接、CRUD、过滤排序分页                    |
-| `src/data/exchange.ts`                      | MD/DOCX/PDF 导入导出门面（重型依赖动态加载）          |
-| `src/data/searchAll.ts`                     | 全库搜索：内存过滤 + 相关度评分 + 片段生成            |
-| `src/data/export/prepare.ts`                | 导出自包含预处理：附件 data URL + Mermaid 渲染        |
-| `src/data/export/math.ts`                   | KaTeX TeX → docx 原生 OMML（`docx/math`）             |
-| `src/data/export/html.ts`                   | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`） |
-| `src/data/export/print.ts`                  | 隐藏 iframe → 浏览器打印（矢量 PDF）                  |
-| `src/utils/mermaid.ts`                      | Mermaid 渲染（预览/导出共用，输出 SVG/PNG）           |
-| `src/data/blobStore.ts`                     | 附件引用计数/回收 + `clawclip://` ⇄ object URL        |
-| `src/stores/notesStore.ts`                  | 笔记/文件夹真相源 + noteCache + 列表请求序号          |
-| `src/hooks/useMarkdownSession.ts`           | 编辑会话：加载、节流自动保存、卸载落库                |
-| `src/hooks/useRenderedMarkdown.ts`          | 按需渲染 + 附件水合                                   |
-| `src/components/editor/MarkdownEditor.tsx`  | CodeMirror 6 封装                                     |
-| `src/features/editor/EditorPane.tsx`        | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出           |
+| 文件                                        | 职责                                                    |
+| ------------------------------------------- | ------------------------------------------------------- |
+| `src/data/db.ts` / `local.ts` / `query.ts`  | IndexedDB 连接、CRUD、过滤排序分页                      |
+| `src/data/exchange.ts`                      | MD/DOCX/PDF 导入导出门面（重型依赖动态加载）            |
+| `src/data/searchAll.ts`                     | 全库搜索：内存过滤 + 相关度评分 + 片段生成              |
+| `src/data/export/prepare.ts`                | 导出自包含预处理：附件 data URL + Mermaid 渲染          |
+| `src/data/export/math.ts`                   | KaTeX TeX → docx 原生 OMML（`docx/math`）               |
+| `src/data/export/html.ts`                   | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`）   |
+| `src/data/export/print.ts`                  | 隐藏 iframe → 浏览器打印（矢量 PDF）                    |
+| `src/utils/mermaid.ts`                      | Mermaid 渲染（预览/导出共用，输出 SVG/PNG）             |
+| `src/data/blobStore.ts`                     | 附件引用计数/回收 + `clawclip://` ⇄ object URL          |
+| `src/stores/notesStore.ts`                  | 笔记/文件夹真相源 + noteCache + 列表请求序号            |
+| `src/hooks/useMarkdownSession.ts`           | 编辑会话：加载、节流自动保存、卸载落库                  |
+| `src/hooks/useRenderedMarkdown.ts`          | 按需渲染 + 附件水合                                     |
+| `src/components/editor/MarkdownEditor.tsx`  | CodeMirror 6 封装                                       |
+| `src/features/editor/EditorPane.tsx`        | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出             |
 | `src/features/search/SearchPalette.tsx`     | 全库搜索 UI：VSCode Quick Input 风格命令面板 + 键盘导航 |
-| `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令）                                |
-| `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数          |
-| `src/utils/markdownFormat.ts`               | 整篇 Markdown 格式化（幂等、代码块保护）              |
-| `src/features/preview/themes.ts`            | 内置预览/导出排版 CSS                                 |
-| `src/features/theme/ThemeDialog.tsx`        | 主题设置：自定义页面 CSS 编辑与持久化                 |
+| `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令）                                  |
+| `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数            |
+| `src/utils/markdownFormat.ts`               | 整篇 Markdown 格式化（幂等、代码块保护）                |
+| `src/utils/frontMatter.ts`                  | front matter 识别/剥离 + title/tags 轻量投影            |
+| `src/features/preview/themes.ts`            | 内置预览/导出排版 CSS                                   |
+| `src/features/theme/ThemeDialog.tsx`        | 主题设置：自定义页面 CSS 编辑与持久化                   |
 
 ## 10. 已知限制
 
@@ -357,3 +369,6 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 - **DOCX 公式**经 `docx/math::latexToMath()` 转原生 OMML；该转换器不认识的 KaTeX 扩展宏会回退为
   等宽 TeX 文本。DOCX 块级结构覆盖标题/段落/列表/表格/代码/图片，批注、目录域等复杂样式不迁移。
 - **Mermaid 体积较大**（elk/cytoscape 按图类型切分为懒加载 chunk），首次渲染图表会有短暂延迟。
+- **Front matter 只投影 `title`/`tags`**：其他键不解释、不写入、不提供属性面板；不会自动生成
+  front matter；嵌套对象、锚点/别名、多文档等完整 YAML 语义不支持。解析器是行级轻量实现，
+  极端写法（多行普通标量等）的取值可能不如完整 YAML 库精确，但未知键始终原样保留。

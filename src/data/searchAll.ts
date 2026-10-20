@@ -13,6 +13,7 @@
  */
 import { globalConfig } from "@/config";
 import type { Note } from "@/types/note";
+import { parseFrontMatter } from "@/utils/frontMatter";
 import { getAllOf } from "./db";
 
 /** 命中类型：整篇标题 / 标签 / 正文。 */
@@ -212,13 +213,26 @@ export async function searchAllNotes(
     const matches: SearchMatch[] = [];
     let matchCount = 0;
 
+    // CodeMirror 会把 CRLF / CR 归一成 LF；搜索偏移必须使用同一坐标系，
+    // 否则含 Windows 换行的笔记在首行之后会整体错位。
+    const content = note.content.includes("\r")
+      ? note.content.replace(/\r\n?/g, "\n")
+      : note.content;
+
+    // front matter 是元数据来源：标题/标签以正文声明为准，兼容尚未重新落库的旧笔记；
+    // 正文命中则跳过整个区块，但偏移仍基于完整 content（坐标不能变）。
+    const frontMatter = parseFrontMatter(content);
+    const title = frontMatter.title ?? note.title;
+    const tags = frontMatter.present && frontMatter.hasTags ? frontMatter.tags : note.tags;
+    const bodyStart = frontMatter.present ? frontMatter.end : 0;
+
     // —— 标题 ——
-    const titleHit = note.title.match(containsRe);
+    const titleHit = title.match(containsRe);
     if (titleHit) {
       matchCount++;
       matches.push({
         kind: "title",
-        text: note.title,
+        text: title,
         offset: null,
         length: titleHit[0].length,
         inHeading: false,
@@ -229,7 +243,7 @@ export async function searchAllNotes(
 
     // —— 标签 ——
     let tagHitCount = 0;
-    for (const tag of note.tags) {
+    for (const tag of tags) {
       const tagHit = tag.match(containsRe);
       if (!tagHit) continue;
       tagHitCount++;
@@ -246,16 +260,14 @@ export async function searchAllNotes(
     }
 
     // —— 正文 ——
-    // CodeMirror 会把 CRLF / CR 归一成 LF；搜索偏移必须使用同一坐标系，
-    // 否则含 Windows 换行的笔记在首行之后会整体错位。
-    const content = note.content.includes("\r")
-      ? note.content.replace(/\r\n?/g, "\n")
-      : note.content;
     let contentHits = 0;
     let primarySnippet = "";
     contentRe.lastIndex = 0;
     for (const m of content.matchAll(contentRe)) {
       const offset = m.index ?? 0;
+      // front matter 里的键值不属于正文：不计数、不生成叶子
+      if (offset < bodyStart) continue;
+
       const length = m[0].length;
       contentHits++;
 
@@ -287,8 +299,8 @@ export async function searchAllNotes(
     matches.sort(compareMatches);
     results.push({
       id: note.id,
-      title: note.title,
-      tags: note.tags,
+      title,
+      tags,
       score,
       matchCount,
       matches: matches.slice(0, MAX_MATCHES_PER_NOTE),

@@ -23,6 +23,7 @@ import sup from "markdown-it-sup";
 import mark from "markdown-it-mark";
 import katex from "@vscode/markdown-it-katex";
 import hljsModule from "highlight.js/lib/common";
+import { parseFrontMatter } from "@/utils/frontMatter";
 
 /**
  * CJS/ESM 互操作兜底：Vite 对 CommonJS 插件可能返回 `{ default: fn }`，
@@ -129,12 +130,36 @@ function githubAlerts(md: MarkdownItInstance): void {
   });
 }
 
+/**
+ * YAML front matter：识别并整段跳过，不产生任何输出。
+ *
+ * 必须在块级规则最前面：否则首行 `---` 会被解析成水平分割线，
+ * 紧接着的 `title: xxx` + 关闭线会被解析成 Setext 标题，
+ * 既污染预览/导出，也会凭空多出一条大纲。
+ *
+ * 只有**闭合**的区块才会被吞掉；用户刚敲下第一行 `---` 时仍按普通正文渲染。
+ */
+function frontMatter(md: MarkdownItInstance): void {
+  md.block.ruler.before("table", "front_matter", (state, startLine, _endLine, silent) => {
+    // front matter 只可能出现在文档第一行
+    if (startLine !== 0) return false;
+    const info = parseFrontMatter(state.src);
+    if (!info.present) return false;
+    if (silent) return true;
+
+    // 跳过区块占用的所有行，交给后续块级规则处理正文
+    state.line = startLine + info.lineCount;
+    return true;
+  });
+}
+
 md.use(asPlugin(footnote))
   .use(asPlugin(taskLists), { enabled: true, label: true })
   .use(asPlugin(deflist))
   .use(asPlugin(sub))
   .use(asPlugin(sup))
   .use(asPlugin(mark))
+  .use(frontMatter)
   .use(asPlugin(katex), { throwOnError: false })
   .use(githubAlerts);
 

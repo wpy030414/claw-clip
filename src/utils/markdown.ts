@@ -3,7 +3,11 @@
  *
  * 均为「够用就好」的轻量实现，不引入完整 md AST 解析器（列表页投影场景
  * 追求零依赖、低开销；编辑器/预览用同一套字数语义，保证列表与顶栏一致）。
+ *
+ * 三者都先剥离文档开头的 YAML front matter：元数据不是正文，不能进入
+ * 标题、摘要、字数，也不能让关闭分隔线被当成 Setext 标题。
  */
+import { parseFrontMatter, stripFrontMatter } from "@/utils/frontMatter";
 
 /** 去掉常见 Markdown 标记，返回近似纯文本（用于字数统计与摘要）。 */
 function stripMarkdown(md: string): string {
@@ -35,12 +39,19 @@ function stripMarkdown(md: string): string {
 
 /**
  * 从正文派生标题：
- * 1. 首个 `# ` 一级标题（或任意级 ATX 标题的文本）；
- * 2. 否则取首个非空行的前 30 字；
- * 3. 否则 '无标题'。
+ * 1. front matter 的 `title`（显式标题，不截断）；
+ * 2. 首个 ATX 标题的文本；
+ * 3. 否则取首个非空行的前 30 字；
+ * 4. 否则 '无标题'。
  */
 export function deriveTitle(content: string): string {
-  const lines = content.split("\n");
+  const frontMatter = parseFrontMatter(content);
+  if (frontMatter.title) {
+    return frontMatter.title.replace(/\s+/g, " ").trim();
+  }
+
+  const body = frontMatter.present ? content.slice(frontMatter.end) : content;
+  const lines = body.split("\n");
   for (const line of lines) {
     const h = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
     if (h) {
@@ -67,7 +78,7 @@ const CJK_RE = /[㐀-䶿぀-ヿ一-鿿가-힯]/g;
  * 其余空白与标点不计。
  */
 export function countWords(content: string): number {
-  const text = stripMarkdown(content);
+  const text = stripMarkdown(stripFrontMatter(content));
   const cjk = text.match(CJK_RE);
   const words = text
     // 先把 CJK 字符抠掉，剩下的按空白切词
@@ -79,6 +90,6 @@ export function countWords(content: string): number {
 
 /** 生成摘要：去 Markdown 标记、压平空白后取前 80 字纯文本。 */
 export function makeExcerpt(content: string, max = 80): string {
-  const text = stripMarkdown(content).replace(/\s+/g, " ").trim();
+  const text = stripMarkdown(stripFrontMatter(content)).replace(/\s+/g, " ").trim();
   return text.length > max ? text.slice(0, max) : text;
 }

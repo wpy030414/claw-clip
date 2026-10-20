@@ -18,6 +18,7 @@ import { katexTex, katexToMath, loadMathApi } from "./export/math";
 import { buildHtmlDocument } from "./export/html";
 import { buildPrintDocument, printHtmlDocument } from "./export/print";
 import { prepareExportHtml } from "./export/prepare";
+import { parseFrontMatter } from "@/utils/frontMatter";
 
 export { buildHtmlDocument, buildPrintDocument, prepareExportHtml, printHtmlDocument };
 export type { BuildHtmlOptions } from "./export/html";
@@ -626,7 +627,10 @@ export async function importDocument(file: File): Promise<ImportedDocument> {
   const title = file.name.replace(/\.[^.]+$/, "") || "导入的文档";
 
   if (ext === "md" || ext === "markdown" || ext === "txt") {
-    return { title, content: await file.text() };
+    const content = await file.text();
+    // front matter 的 title 是文档自带的显式标题，优先于文件名；
+    // 正文保持原样，导出/备份时 front matter 仍逐字节保留。
+    return { title: parseFrontMatter(content).title ?? title, content };
   }
   if (ext === "docx") {
     return { title, content: await docxToMarkdown(file) };

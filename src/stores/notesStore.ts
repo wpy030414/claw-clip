@@ -10,8 +10,11 @@
  *   避免内存态 content 与存储态 content 含义不一致。
  * - **title 跟随正文派生**：saveNote/saveActive 时若 patch 未显式给 title，则 deriveTitle(content) 重算
  *   （Typora/Obsidian 式「标题=首个 H1」，单一真相源）；显式给 title 则用之（支持将来重命名）。
+ *   front matter 的 `title` 优先于 H1，但 patch 里的显式 title 仍代表用户动作，优先级最高。
+ * - **tags 由 front matter 投影**：`tags` 键存在时以正文声明为准（含显式 `tags: []`）；
+ *   没有 front matter 时保留库里的值，为将来的手动标签 UI 留路。
  * - **attachmentIds 从 content 反填**：保存时正则提取所有 clawclip://blob/<id>，保证与正文一致，
- *   附件引用计数与导出打包才准确。
+ *   附件引用计数与导出打包才准确。front matter 里的附件引用同样计入（如封面图）。
  */
 import { create } from "zustand";
 import { datasource } from "@/data/datasource";
@@ -21,6 +24,7 @@ import type { Note, NoteSummary } from "@/types/note";
 import { emptyFolder } from "@/types/folder";
 import type { Folder } from "@/types/folder";
 import type { BackupPayload } from "@/types/backup";
+import { parseFrontMatter } from "@/utils/frontMatter";
 import { countWords, deriveTitle, makeExcerpt } from "@/utils/markdown";
 
 /**
@@ -52,6 +56,33 @@ async function drainWrites(): Promise<void> {
   while (pendingWrites.size > 0) {
     await Promise.allSettled(pendingWrites);
   }
+}
+
+/**
+ * 由正文 front matter 投影 tags。
+ *
+ * - patch 显式给 tags：以 patch 为准（调用方意图最高）；
+ * - 正文有 `tags` 键：以正文为准（含 `tags: []` 的显式清空）；
+ * - 旧正文有 `tags` 键、新正文删掉了它：清空（声明被移除）；
+ * - 两侧都没有该键：保留库里的值，为将来的手动标签 UI 留路。
+ */
+function projectTags(
+  patchTags: string[] | undefined,
+  content: string,
+  previousContent: string,
+  contentChanged: boolean,
+  currentTags: string[],
+): string[] {
+  if (patchTags !== undefined) return patchTags;
+  if (!contentChanged) return currentTags;
+
+  const next = parseFrontMatter(content);
+  if (next.present && next.hasTags) return next.tags;
+
+  const previous = parseFrontMatter(previousContent);
+  if (previous.present && previous.hasTags) return [];
+
+  return currentTags;
 }
 
 interface NotesState {
@@ -166,7 +197,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
     // 只有正文变化时才重新派生标题；否则保留原标题，避免「打开再关闭」改动手动标题
     const title =
       patch.title !== undefined ? patch.title : contentChanged ? deriveTitle(content) : cur.title;
-    const tags = patch.tags ?? cur.tags;
+    const tags = projectTags(patch.tags, content, cur.content, contentChanged, cur.tags);
     const folderId = patch.folderId !== undefined ? patch.folderId : cur.folderId;
     const pinned = patch.pinned !== undefined ? patch.pinned : cur.pinned;
 

@@ -44,6 +44,14 @@ describe("importDocument", () => {
     expect(doc.content).toBe("# 标题\n\n正文");
   });
 
+  it("front matter 的 title 优先于文件名，正文逐字节保留", async () => {
+    const content = "---\ntitle: 属性标题\ntags: [工作]\n---\n\n# 正文标题\n";
+    const file = new File([content], "文件名.md", { type: "text/markdown" });
+    const doc = await importDocument(file);
+    expect(doc.title).toBe("属性标题");
+    expect(doc.content).toBe(content);
+  });
+
   it("不支持的扩展名抛错", async () => {
     const file = new File(["x"], "a.xyz", { type: "text/plain" });
     await expect(importDocument(file)).rejects.toThrow(/不支持/);

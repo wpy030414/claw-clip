@@ -535,4 +535,54 @@ describe("searchAllNotes", () => {
       }
     });
   });
+
+  describe("front matter", () => {
+    const content = [
+      "---",
+      "title: 属性标题",
+      "tags: [工作, 笔记]",
+      "keywords: 元数据里的独有词",
+      "---",
+      "",
+      "# 正文标题",
+      "",
+      "正文里也有元数据这个词。",
+    ].join("\n");
+
+    it("标题 / 标签命中取自 front matter，即使库里的字段尚未投影", async () => {
+      await insertNote(createNote({ id: "note-1", title: "旧标题", tags: [], content }));
+
+      const byTitle = await searchAllNotes("属性标题");
+      expect(byTitle[0].matches.map((m) => m.kind)).toEqual(["title"]);
+
+      const byTag = await searchAllNotes("工作");
+      expect(byTag[0].matches.map((m) => m.kind)).toEqual(["tag"]);
+      expect(byTag[0].tags).toEqual(["工作", "笔记"]);
+    });
+
+    it("正文命中跳过 front matter，但偏移仍指向完整正文", async () => {
+      await insertNote(createNote({ id: "note-1", title: "笔记", content }));
+
+      // `keywords:` 的值只存在于 front matter，不能算正文命中
+      expect(await searchAllNotes("独有词")).toEqual([]);
+
+      const results = await searchAllNotes("元数据");
+      expect(results).toHaveLength(1);
+      const [match] = results[0].matches;
+      expect(match.kind).toBe("content");
+      expect(content.slice(match.offset!, match.offset! + match.length)).toBe("元数据");
+      expect(content.indexOf("元数据", content.indexOf("正文里"))).toBe(match.offset);
+    });
+
+    it("未闭合的 front matter 仍按普通正文搜索", async () => {
+      const src = "---\ntitle: 半成品\n\n正文";
+      await insertNote(createNote({ id: "note-1", title: "笔记", content: src }));
+
+      const results = await searchAllNotes("半成品");
+      expect(results[0].matches[0]).toMatchObject({
+        kind: "content",
+        offset: src.indexOf("半成品"),
+      });
+    });
+  });
 });

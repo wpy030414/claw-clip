@@ -775,6 +775,19 @@ export function NoteTree() {
           <span className="tree-note-time">{relativeTime(note.updatedAt)}</span>
         </span>
         <span className="tree-note-excerpt">{notePreview(note)}</span>
+        {note.tags.length > 0 && (
+          <span
+            className="tree-note-tags"
+            data-testid="note-tags"
+            title={`标签：${note.tags.join("、")}`}
+          >
+            {note.tags.map((tag) => (
+              <span key={tag} className="tree-note-tag">
+                #{tag}
+              </span>
+            ))}
+          </span>
+        )}
       </span>
     </div>
   );

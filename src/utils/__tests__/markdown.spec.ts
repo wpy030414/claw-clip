@@ -83,3 +83,37 @@ describe("makeExcerpt", () => {
     expect(makeExcerpt("多个   空白\n\n换行")).toBe("多个 空白 换行");
   });
 });
+
+describe("front matter 不进入派生字段", () => {
+  const content = [
+    "---",
+    "title: 属性标题",
+    "tags: [工作, 笔记]",
+    "description: 一段很长的属性说明",
+    "---",
+    "",
+    "# 正文标题",
+    "",
+    "正文内容。",
+  ].join("\n");
+
+  it("deriveTitle 优先取 front matter title", () => {
+    expect(deriveTitle(content)).toBe("属性标题");
+  });
+
+  it("没有 title 键时从正文 H1 派生，不受分隔线干扰", () => {
+    const src = "---\ntags: [a]\n---\n\n# 正文标题\n";
+    expect(deriveTitle(src)).toBe("正文标题");
+  });
+
+  it("countWords / makeExcerpt 只统计正文", () => {
+    // 「正文标题」4 字 + 「正文内容」4 字
+    expect(countWords(content)).toBe(8);
+    expect(makeExcerpt(content)).toBe("正文标题 正文内容。");
+  });
+
+  it("未闭合的 front matter 仍按普通正文处理", () => {
+    const src = "---\ntitle: 半成品";
+    expect(deriveTitle(src)).toBe("title: 半成品");
+  });
+});
