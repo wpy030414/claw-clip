@@ -11,6 +11,8 @@ beforeEach(() => {
     sidebarOpen: true,
     sidebarTab: "docs",
     commandPaletteOpen: false,
+    searchOpen: false,
+    searchJump: null,
     tocOpen: true,
     viewMode: null,
     confirmQueue: [],
@@ -122,5 +124,28 @@ describe("uiStore 确认对话框队列", () => {
       .getState()
       .pushConfirm({ content: "2", onConfirm: vi.fn(), onCancel: vi.fn() });
     expect(id1).not.toBe(id2);
+  });
+});
+
+describe("uiStore 搜索跳转目标", () => {
+  it("setSearchJump 写入目标并递增 token", () => {
+    useUiStore.getState().setSearchJump({ noteId: "n1", from: 3, to: 8 });
+    const first = useUiStore.getState().searchJump;
+    expect(first).toMatchObject({ noteId: "n1", from: 3, to: 8 });
+    expect(first?.token).toBeGreaterThan(0);
+
+    useUiStore.getState().setSearchJump({ noteId: "n1", from: 9, to: 14 });
+    expect(useUiStore.getState().searchJump?.token).toBe((first?.token ?? 0) + 1);
+  });
+
+  it("consumeSearchJump 只清空 token 匹配的目标", () => {
+    useUiStore.getState().setSearchJump({ noteId: "n2", from: 0, to: 0 });
+    const token = useUiStore.getState().searchJump!.token;
+
+    useUiStore.getState().consumeSearchJump(token + 1);
+    expect(useUiStore.getState().searchJump).not.toBeNull();
+
+    useUiStore.getState().consumeSearchJump(token);
+    expect(useUiStore.getState().searchJump).toBeNull();
   });
 });

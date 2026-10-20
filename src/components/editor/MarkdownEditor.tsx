@@ -34,6 +34,33 @@ import { animateScrollTo, scrollTopFor } from "@/utils/scroll";
 /** 大纲跳转贴顶时保留的留白（与旧 scrollIntoView 的 yMargin 一致）。 */
 const SCROLL_MARGIN = 24;
 
+/**
+ * 选中文档中的一段并滚动到它的起点。
+ *
+ * 落点每帧重算（见 utils/scroll）：刚切回编辑/分屏时列宽还在过渡，
+ * 一次性算好的位置会偏。`to === from` 时退化为「把光标放到该位置」。
+ */
+function revealRange(view: EditorView, from: number, to: number): void {
+  const docLength = view.state.doc.length;
+  const start = Math.max(0, Math.min(from, docLength));
+  const end = Math.max(start, Math.min(to, docLength));
+
+  // 选中命中文本，视觉上能立刻确认跳到了哪一处；滚动交给平滑动画。
+  view.dispatch({ selection: { anchor: start, head: end } });
+  view.focus();
+  animateScrollTo(view.scrollDOM, () => {
+    const scroller = view.scrollDOM;
+    const block = view.lineBlockAt(start);
+    return scrollTopFor({
+      scrollTop: scroller.scrollTop,
+      currentTop: view.documentTop + block.top,
+      containerTop: scroller.getBoundingClientRect().top,
+      margin: SCROLL_MARGIN,
+      maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
+    });
+  });
+}
+
 /** 在 EditorView 上执行一次 Markdown 命令；返回是否产生了改动。 */
 function runInView(view: EditorView, command: MarkdownCommand): boolean {
   const { from, to } = view.state.selection.main;
@@ -74,6 +101,8 @@ export interface MarkdownEditorHandle {
   getSelection: () => string;
   /** 滚动到指定文档位置并把光标放过去（大纲跳转）。 */
   scrollTo: (pos: number) => void;
+  /** 选中指定区间并滚动到起点（搜索结果跳转；from=to 时只放光标）。 */
+  selectRange: (from: number, to: number) => void;
   /** 执行工具栏命令（加粗/标题/列表等）。 */
   applyCommand: (command: MarkdownCommand) => void;
   /** 从隐藏状态重新显示后重算布局（CodeMirror 需要）。 */
@@ -328,24 +357,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function M
     scrollTo: (pos: number) => {
       const view = viewRef.current;
       if (!view) return;
-      const target = Math.max(0, Math.min(pos, view.state.doc.length));
-      // 光标与焦点立刻到位；滚动交给平滑动画，避免「瞬移」丢失位置感。
-      view.dispatch({ selection: { anchor: target } });
-      view.focus();
-      // CodeMirror 的 scrollIntoView 效果是一次性贴边（瞬时），这里自己算落点。
-      // 落点每帧重算：刚切回编辑/分屏时列宽还在 260ms 过渡中，换行与行高
-      // 持续变化，点击那一刻算好的位置会偏（预览列收起时甚至接近 0 宽）。
-      animateScrollTo(view.scrollDOM, () => {
-        const scroller = view.scrollDOM;
-        const block = view.lineBlockAt(target);
-        return scrollTopFor({
-          scrollTop: scroller.scrollTop,
-          currentTop: view.documentTop + block.top,
-          containerTop: scroller.getBoundingClientRect().top,
-          margin: SCROLL_MARGIN,
-          maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
-        });
-      });
+      revealRange(view, pos, pos);
+    },
+    selectRange: (from: number, to: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      revealRange(view, from, to);
     },
     applyCommand: (command: MarkdownCommand) => {
       const view = viewRef.current;

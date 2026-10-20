@@ -40,6 +40,24 @@ export interface ConfirmRequest {
   onCancel: () => void;
 }
 
+/**
+ * 搜索命中后的精确跳转目标。
+ *
+ * SearchPalette 写入 → EditorPane 在目标笔记载入、编辑器就绪后消费：
+ * 选中正文中的对应区间并滚动过去。`token` 单调递增，保证重复点击同一条
+ * 匹配（路由不变）也能触发一次新的跳转。
+ */
+export interface SearchJumpTarget {
+  noteId: string;
+  /** 正文中的起始/结束 UTF-16 偏移；标题/标签匹配为 0。 */
+  from: number;
+  to: number;
+  token: number;
+}
+
+/** 模块级序号：不进入持久化，刷新后从 0 重新开始。 */
+let searchJumpSeq = 0;
+
 interface UiState {
   /** 由 useMediaQuery 写入，AppShell 据此选布局。 */
   isDesktop: boolean;
@@ -51,6 +69,10 @@ interface UiState {
   /** 当前笔记大纲（编辑器写入，侧栏消费）。 */
   outline: OutlineItem[];
   commandPaletteOpen: boolean;
+  /** 全库搜索面板是否打开（Ctrl/Cmd+F 唤起）。 */
+  searchOpen: boolean;
+  /** 待消费的搜索跳转目标（EditorPane 读取后清空）。 */
+  searchJump: SearchJumpTarget | null;
   /** 「存储空间」大 dialog 是否打开（从侧栏底部统计胶囊进入）。 */
   storageDialogOpen: boolean;
   /** 「主题」dialog 是否打开（从侧栏底部主题按钮进入）。 */
@@ -70,6 +92,11 @@ interface UiState {
   setSidebarTab: (tab: SidebarTab) => void;
   setOutline: (items: OutlineItem[]) => void;
   setCommandPalette: (open: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
+  /** 写入一次跳转目标并生成新 token。 */
+  setSearchJump: (target: Omit<SearchJumpTarget, "token">) => void;
+  /** 消费目标：只有 token 仍匹配时才清空，避免误清后写入的新目标。 */
+  consumeSearchJump: (token: number) => void;
   setStorageDialogOpen: (open: boolean) => void;
   setThemeDialogOpen: (open: boolean) => void;
   setViewMode: (mode: ViewMode | null) => void;
@@ -86,6 +113,8 @@ export const useUiStore = create<UiState>()((set, get) => ({
   sidebarTab: "docs",
   outline: [],
   commandPaletteOpen: false,
+  searchOpen: false,
+  searchJump: null,
   storageDialogOpen: false,
   themeDialogOpen: false,
   tocOpen: true,
@@ -98,6 +127,11 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   setOutline: (items) => set({ outline: items }),
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
+  setSearchOpen: (open) => set({ searchOpen: open }),
+  setSearchJump: (target) => set({ searchJump: { ...target, token: ++searchJumpSeq } }),
+  consumeSearchJump: (token) => {
+    if (get().searchJump?.token === token) set({ searchJump: null });
+  },
   setStorageDialogOpen: (open) => set({ storageDialogOpen: open }),
   setThemeDialogOpen: (open) => set({ themeDialogOpen: open }),
   setViewMode: (mode) => set({ viewMode: mode }),

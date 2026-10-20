@@ -12,6 +12,7 @@ import { useUiStore } from "@/stores/uiStore";
 import { TaskProgressOverlay } from "@/components/common/TaskProgressOverlay";
 import { requestPersistentStorage } from "@/data/storageReport";
 import { StorageDialog } from "@/features/storage/StorageDialog";
+import { SearchPalette } from "@/features/search/SearchPalette";
 import { ThemeDialog } from "@/features/theme/ThemeDialog";
 import { DesktopLayout } from "./DesktopLayout";
 import { MobileLayout } from "./MobileLayout";
@@ -66,6 +67,7 @@ export function AppShell() {
   return (
     <>
       {isDesktop ? <DesktopLayout /> : <MobileLayout />}
+      <SearchPalette />
       <StorageDialog />
       <ThemeDialog />
       <TaskProgressOverlay />

@@ -80,6 +80,33 @@ Markdown 源码 → debounce(120ms) → hydrateMarkdown(clawclip:// → object U
   → HTML → 右侧预览区（分屏 / 预览视图）；```mermaid 代码块由 MarkdownPreview 懒加载渲染为 SVG
 ````
 
+### 全库搜索
+
+```
+Ctrl/Cmd+F → uiStore.setSearchOpen(true)
+  → SearchPalette：未输入时只有胶囊输入框
+  → 用户输入 → 150ms 防抖
+  → flushActiveEditor()：当前编辑器实时正文先落库
+  → searchAllNotes(keyword, { currentNoteId })
+  → getAllOf<Note> 读取全量笔记
+  → 正文 CRLF/CR 归一为 LF（与 CodeMirror 坐标系一致）
+  → 内存过滤 + 文章评分（标题×10 + 正文×命中次数 + 标签×3）
+  → 为每处命中生成 offset / length / 上下文片段（叶子按局部相关度排序）
+  → 当前文章置顶；其余按 score 降序，同分新文章优先
+  → 渲染「文章根 + 命中叶」树，当前文章默认展开
+  → 点击/回车叶子 → uiStore.setSearchJump({ noteId, from, to })
+  → navigate(`/n/${id}`) + 关闭面板
+  → EditorPane 在笔记载入后 selectRange(from, to) + 平滑滚动到命中位置
+```
+
+面板是 M3E 风格的 Spotlight 式布局：未输入只有 999px 胶囊输入框，输入后下方拉出
+24px 圆角结果卡；当前文章置顶并默认展开，文章为根、命中为叶。命中偏移使用正文的
+UTF-16 偏移，并把 CRLF/CR 归一成 LF 后再计算（与 CodeMirror 的文档坐标系一致），
+保证点击后选中并滚动到准确位置；仅预览时先切到分屏/编辑再滚动。因为要继承
+`<m3e-theme>` 上的 `--md-sys-color-*`，浮层不 portal 到 `body`，而是挂在
+AppShell 内，用原生 `<dialog>.showModal()` 进入 top layer 后自绘；这也保证
+它能盖在「存储空间 / 主题」等已打开的 M3E modal 之上（z-index 管不到 top layer）。
+
 预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出时用**当前正文重新渲染一次**
 （`renderForExport`，避免 120ms 防抖缓存导出上一版）。
 预览与导出**共用同一份 HTML 与内置排版 CSS**；导出前统一经 `prepareExportHtml()` 把运行时资源
@@ -288,6 +315,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | ------------------------------------------- | ----------------------------------------------------- |
 | `src/data/db.ts` / `local.ts` / `query.ts`  | IndexedDB 连接、CRUD、过滤排序分页                    |
 | `src/data/exchange.ts`                      | MD/DOCX/PDF 导入导出门面（重型依赖动态加载）          |
+| `src/data/searchAll.ts`                     | 全库搜索：内存过滤 + 相关度评分 + 片段生成            |
 | `src/data/export/prepare.ts`                | 导出自包含预处理：附件 data URL + Mermaid 渲染        |
 | `src/data/export/math.ts`                   | KaTeX TeX → docx 原生 OMML（`docx/math`）             |
 | `src/data/export/html.ts`                   | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`） |
@@ -299,6 +327,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | `src/hooks/useRenderedMarkdown.ts`          | 按需渲染 + 附件水合                                   |
 | `src/components/editor/MarkdownEditor.tsx`  | CodeMirror 6 封装                                     |
 | `src/features/editor/EditorPane.tsx`        | 顶栏 + 工具栏 + 编辑/分屏/预览工作区 + 导出           |
+| `src/features/search/SearchPalette.tsx`     | 全库搜索 UI：VSCode Quick Input 风格命令面板 + 键盘导航 |
 | `src/components/editor/MarkdownToolbar.tsx` | 格式工具栏（只发命令）                                |
 | `src/components/editor/markdownCommands.ts` | 命令 → CodeMirror changes/selection 的纯函数          |
 | `src/utils/markdownFormat.ts`               | 整篇 Markdown 格式化（幂等、代码块保护）              |

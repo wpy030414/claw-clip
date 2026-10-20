@@ -85,6 +85,8 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
   // 视图是会话内瞬态：刷新后回到「桌面分屏 / 移动仅编辑」，不用 localStorage 记住
   const storedView = useUiStore((s) => s.viewMode);
   const setViewMode = useUiStore((s) => s.setViewMode);
+  const searchJump = useUiStore((s) => s.searchJump);
+  const consumeSearchJump = useUiStore((s) => s.consumeSearchJump);
   const setOutline = useUiStore((s) => s.setOutline);
   const sidebarTab = useUiStore((s) => s.sidebarTab);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -200,6 +202,43 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     if (!pending) return;
     if (scrollPreviewToHeading(pending)) pendingPreviewJump.current = null;
   }, [html, htmlReady, scrollPreviewToHeading]);
+
+  /**
+   * 搜索结果跳转：目标笔记载入、编辑器就绪后，选中命中区间并滚动过去。
+   *
+   * 仅预览时源码编辑器不可见，落点不可靠：先切到分屏（桌面）/编辑（移动），
+   * 等视图切换完成、本 effect 重跑后再滚。跳转完成后消费掉目标，避免重复触发。
+   */
+  useEffect(() => {
+    if (!searchJump) return;
+
+    if (searchJump.noteId !== noteId) {
+      // 用户已经离开目标笔记：丢弃，避免以后打开该笔记时误跳
+      consumeSearchJump(searchJump.token);
+      return;
+    }
+    if (loading) return;
+
+    if (effectiveView === "preview") {
+      setViewMode(isDesktop ? "split" : "edit");
+      return;
+    }
+
+    let raf = 0;
+    let attempts = 0;
+    const run = () => {
+      const editor = editorRef.current;
+      if (!editor) {
+        // 视图刚切换时编辑器可能还没挂载，最多重试 20 帧
+        if (attempts++ < 20) raf = requestAnimationFrame(run);
+        return;
+      }
+      editor.selectRange(searchJump.from, searchJump.to);
+      consumeSearchJump(searchJump.token);
+    };
+    raf = requestAnimationFrame(run);
+    return () => cancelAnimationFrame(raf);
+  }, [searchJump, noteId, loading, effectiveView, isDesktop, setViewMode, consumeSearchJump]);
 
   // 离开编辑器时清空大纲，避免下一条笔记短暂显示上一条的标题
   useEffect(() => () => setOutline([]), [setOutline]);
