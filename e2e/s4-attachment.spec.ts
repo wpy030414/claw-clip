@@ -111,9 +111,31 @@ test("附件: 删除笔记后无引用附件自动回收（引用计数）", asy
   await expect.poll(() => blobCount(page), { timeout: 5_000 }).toBe(0);
 });
 
-test("导出 HTML：附件图片内联为 data URL，离开会话仍可见", async ({ page }) => {
+test("导出 HTML：本地图片转图床外链，外链图片不再内联", async ({ page }) => {
+  await page.route("https://img.scdn.io/**", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        "access-control-allow-origin": "*",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        success: true,
+        data: { url: "https://img.cdn1.vip/i/html-export.webp" },
+      }),
+    }),
+  );
+  await page.route("https://cdn.example.test/**", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { "access-control-allow-origin": "*", "content-type": "image/png" },
+      body: PNG,
+    }),
+  );
+
   await newNote(page);
   await dropPng(page);
+  await page.keyboard.insertText("\n\n![外链](https://cdn.example.test/ext.png)\n");
   await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
 
   await page.getByTestId("btn-menu").click();
@@ -123,6 +145,9 @@ test("导出 HTML：附件图片内联为 data URL，离开会话仍可见", asy
   ]);
 
   const html = readFileSync((await download.path())!, "utf-8");
-  expect(html).toContain("data:image/png;base64,");
+  expect(html).toContain("https://img.cdn1.vip/i/html-export.webp");
+  expect(html).toContain("https://cdn.example.test/ext.png");
+  // 本地图片不再内联为 base64；外部图床也不主动下载内联
+  expect(html).not.toContain(PNG.toString("base64"));
   expect(html).not.toContain("blob:");
 });

@@ -1422,3 +1422,22 @@ E2E 覆盖「上传期间进度浮层可见且 Esc 无法关闭」「全部上�
 **后果**：标签很多时只能看到前几个，需悬停查看完整列表；chip 不参与键盘导航（整行仍是单个 button 语义）；移动端复用同一棵树，chip 同样展示。将来做 AND 筛选时，需要把 chip 升级为可点击的过滤入口，并补 active/清除状态。
 
 **验证**：E2E `s6-workstation.spec.ts` 断言导入带 front matter 的文件后，侧栏笔记行出现 `#工作` / `#笔记` chip，且无标签的导入不渲染空 chip 行；`vp check` / `vp test run` / `pnpm run build` 全绿。
+
+## ADR-056 · 导入图片按设置落盘，导出副本图片统一转图床外链 ✅
+
+**背景**：DOCX 便捷导入把内嵌图片经 mammoth 转成 base64 写进正文，一篇带图文档会让笔记体积暴涨，预览水合与自动保存都跟着变慢；同时 MD 导出原样输出本地 `clawclip://` 引用或 base64，离开应用后图片直接失效，导出文件也偏大。用户要求：导入系统的图片按当前图床设置进 IndexedDB 或图床；导出系统尽量把图片上传图床后改写**导出副本**，本来就在图床的链接不重复处理。
+
+**决策**：
+
+- **导入范围**（`data/importImages.ts`）：`data:image` 内联图片**一定处理**；本地图片（`clawclip://`、`blob:`、`file:`、相对/绝对路径）**尽力读取**（15s 超时、MIME 校验），失败保留原引用；其它 http(s) 图床外链**原样保留**，不抓取、不转存。
+- **导入目标**：跟随 `integrationStore.imageHost`。本地目标写入 `blobs` 并生成 `clawclip://blob/<id>`；图床目标上传 `img.scdn.io`，成功写外链、失败回退本地并计数提示。
+- **DOCX 编排**：解析阶段只把内嵌图片收进内存并用临时 token `clawclip-import://image/N` 占位，笔记创建后统一落盘；处理顺序固定为「正文内联/本地图片 → DOCX token」，避免回退生成的 `clawclip://` 被二次扫描重复上传。导入异常时删除新笔记并 `reconcileAttachmentRefs()` 回收无引用附件。
+- **导出范围**：MD 与 HTML 的导出副本把本地 `clawclip://` 图片与内联 base64 上传图床并改成外链；已有 http(s) 外链不处理。上传成功写回 `BlobRecord.remoteUrl`，后续导出/快照直接复用；上传失败时 MD 保留原引用，HTML 回退 data URL。**存储的笔记正文永不改写**。
+- **例外**：DOCX/PDF 导出与全库备份以「自包含、可离线」为目标，图片继续内嵌（data URL / Word 图片 / 备份 base64），不转外链。PDF 导入只抽文字、不提取图片，因此没有可处理的图片。
+- **进度与提示**：存在候选图片且目标为图床时申请阻塞式进度浮层（含实时速度）；结束提示上传/复用/回退/读取失败的数量，不静默吞错。
+
+**理由**：导入落盘解决的是「正文被二进制撑爆」；导出转外链解决的是「交付副本过大且本地引用不可移植」。两者共用同一套「识别 → 解码 → 上传/落盘 → 改写副本」逻辑（`imageAssets.ts` + `imageUpload.ts`），避免导入、MD 导出、HTML 导出各写一份正则和上传代码。外部图床链接不处理，是因为转存会把别人的图片复制到自己的图床、放大流量与版权风险，也不符合用户「本来就在图床里就算了」的约定。
+
+**后果**：HTML 导出不再保证图片离线可看（样式、公式、Mermaid 仍自包含）；外部图床图片在离线环境下同样无法显示。图床目标下导出依赖网络，上传失败的 MD 副本可能残留 `clawclip://` 引用（仅在本应用内有效）。导入相对路径图片会以应用当前 origin 解析，路径不在站点内时按读取失败保留原引用。导入图片按笔记 ID 建立引用计数，失败清理依赖导入流程的补偿逻辑。
+
+**验证**：`importImages.spec.ts` 覆盖 base64/本地/外链分流、缓存复用、上传失败回退、DOCX 图片与悬空引用；`markdownExport.spec.ts` 覆盖本地图片上传、缓存复用、外链保留与失败回退；`htmlExport.spec.ts` 覆盖本地/内联图片转外链、缓存复用与失败回退 data URL；`exchange.spec.ts` 覆盖 DOCX 图片 token 与导入 title。E2E `s6-workstation.spec.ts` 覆盖 MD/DOCX 导入落盘与 MD 导出外链、`s4-attachment.spec.ts` 覆盖 HTML 导出外链、`s8-storage.spec.ts` 覆盖图床设置下的导入；`vp check` / `vp test run`（393 例）/ `pnpm run build` / Playwright（83 例）全绿。

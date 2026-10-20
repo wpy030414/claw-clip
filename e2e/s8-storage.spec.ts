@@ -244,6 +244,40 @@ test("图床：切换到 img.scdn.io 后粘贴图片写外链，失败回退本�
   expect(await blobCount(page)).toBe(1);
 });
 
+test("导入：内联 base64 按图床设置上传，外链保持原样", async ({ page }) => {
+  await page.route("https://img.scdn.io/**", (route) =>
+    fulfillJson(route, 200, {
+      success: true,
+      data: { url: "https://img.cdn1.vip/i/imported.webp" },
+    }),
+  );
+
+  await page.goto("");
+  await openStorage(page);
+  await page.getByTestId("storage-tab-image").click();
+  await page.getByTestId("storage-image-host-scdn").click();
+  await page.getByTestId("storage-dialog-close").click();
+
+  const dataUrl = `data:image/png;base64,${PNG.toString("base64")}`;
+  await page.getByTestId("import-input").setInputFiles({
+    name: "带内联图片.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(`![内联](${dataUrl})\n\n![外链](https://other.example/x.png)`, "utf8"),
+  });
+
+  await expect(page.getByTestId("editor-title")).toHaveText("带内联图片", { timeout: 15_000 });
+  const source = page.locator(EDITOR).first();
+  await expect
+    .poll(async () => source.innerText(), { timeout: 10_000 })
+    .toContain("https://img.cdn1.vip/i/imported.webp");
+
+  const text = await source.innerText();
+  expect(text).toContain("https://other.example/x.png");
+  expect(text).not.toContain("data:image");
+  expect(await blobCount(page)).toBe(0);
+  await expect(page.getByTestId("task-progress")).toBeHidden();
+});
+
 test("图床迁移：全部上传到当前目标并改写引用", async ({ page }) => {
   await page.route("https://img.scdn.io/**", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 400));

@@ -13,6 +13,13 @@ import {
 } from "@/data/exchange";
 import { katexToMath, loadMathApi } from "@/data/export/math";
 
+// jsdom 下 mammoth 默认解析到 Node 入口（只认 path/buffer），生产构建走 browser
+// 入口（认 arrayBuffer）。单测改用浏览器构建，避免测到与线上不同的输入分支。
+vi.mock("mammoth", async () => {
+  const mammoth = await import("mammoth/mammoth.browser.js");
+  return { ...mammoth, default: mammoth };
+});
+
 // 单测环境没有 Mermaid 运行时；只验证「代码块被替换」这一契约。
 vi.mock("@/utils/mermaid", () => ({
   renderMermaidBlocks: vi.fn(async (root: ParentNode) => {
@@ -56,6 +63,56 @@ describe("importDocument", () => {
     const file = new File(["x"], "a.xyz", { type: "text/plain" });
     await expect(importDocument(file)).rejects.toThrow(/不支持/);
   });
+
+  it("DOCX 内嵌图片交给 onImage，正文不再内联 base64", async () => {
+    const { Document, ImageRun, Packer, Paragraph } = await import("docx");
+    const png = Uint8Array.from(
+      atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      ),
+      (char) => char.charCodeAt(0),
+    );
+    const source = new Document({
+      sections: [
+        {
+          children: [
+            new Paragraph({
+              children: [
+                new ImageRun({
+                  data: png,
+                  type: "png",
+                  transformation: { width: 8, height: 8 },
+                }),
+              ],
+            }),
+          ],
+        },
+      ],
+    });
+    const blob = await Packer.toBlob(source);
+    const file = new File([blob], "带图文档.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    // Node Blob 的 arrayBuffer() 与 jsdom 不同 realm，mammoth 浏览器包用 instanceof
+    // 判定类型会失败；改传当前 realm 的 Uint8Array（JSZip 同样接受）。
+    const original = file.arrayBuffer.bind(file);
+    Object.defineProperty(file, "arrayBuffer", {
+      value: async () => new Uint8Array(await original()) as unknown as ArrayBuffer,
+    });
+
+    const images: Blob[] = [];
+    const doc = await importDocument(file, {
+      onImage: async (image) => {
+        images.push(image);
+        return `clawclip-import://image/${images.length - 1}`;
+      },
+    });
+
+    expect(images).toHaveLength(1);
+    expect(images[0].type).toBe("image/png");
+    expect(doc.content).toContain("clawclip-import://image/0");
+    expect(doc.content).not.toContain("data:image");
+  }, 20_000);
 });
 
 describe("htmlToDocx", () => {

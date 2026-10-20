@@ -1,14 +1,15 @@
 /**
  * 导入 / 导出（MD / DOCX / PDF）。
  *
- * - 导出 MD：直接下载正文（附件保留 clawclip:// 引用，仍由应用内解析）。
+ * - 导出 MD：正文经 `export/markdown.ts` 把本地图片上传图床并换成外链后下载。
  * - 导出 HTML：单文件自包含——Mermaid 内联 SVG、附件 data URL、公式走原生 MathML。
  * - 导出 DOCX：渲染 HTML → docx；公式经 `docx/math` 转成 Word 原生 OMML，
  *   Mermaid 转高清 PNG，图片按原始比例缩放。
  * - 导出 PDF：同源 HTML（强制浅色纸面）→ 隐藏 iframe → 浏览器打印，
  *   产出可选中/搜索的矢量 PDF，由用户「另存为 PDF」。
  * - 导入 MD / DOCX / PDF：DOCX 用 mammoth→HTML→turndown；PDF 用 pdf.js 抽文本 +
- *   字号/行距启发式重建标题与段落。
+ *   字号/行距启发式重建标题与段落。DOCX 内嵌图片经 `onImage` 交给调用方持久化
+ *   （不传时保留 mammoth 默认的 data URL）。
  *
  * 重型依赖（docx / docx/math / mammoth / turndown / pdfjs-dist）全部动态 import，
  * 不进入首屏包体。
@@ -26,6 +27,15 @@ export type { BuildHtmlOptions } from "./export/html";
 export interface ImportedDocument {
   title: string;
   content: string;
+}
+
+export interface ImportOptions {
+  /**
+   * DOCX 内嵌图片的处理：返回写入 Markdown 的 `src`。
+   * 调用方通常在这里把图片存进 IndexedDB，返回 `clawclip://blob/<id>`；
+   * 不传时沿用 mammoth 默认行为（内联 data URL）。
+   */
+  onImage?: (image: Blob) => Promise<string>;
 }
 
 /** 触发浏览器下载。 */
@@ -490,9 +500,23 @@ export async function htmlToDocx(
 /* 导入（MD / DOCX / PDF）                                             */
 /* ------------------------------------------------------------------ */
 
-async function docxToMarkdown(file: File): Promise<string> {
+async function docxToMarkdown(
+  file: File,
+  onImage?: (image: Blob) => Promise<string>,
+): Promise<string> {
   const mammoth = await import("mammoth");
-  const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
+  const result = await mammoth.convertToHtml(
+    { arrayBuffer: await file.arrayBuffer() },
+    onImage
+      ? {
+          convertImage: mammoth.images.imgElement(async (image) => {
+            const type = image.contentType || "application/octet-stream";
+            const blob = new Blob([await image.readAsArrayBuffer()], { type });
+            return { src: await onImage(blob) };
+          }),
+        }
+      : undefined,
+  );
   const [{ default: TurndownService }, { gfm }] = await Promise.all([
     import("turndown"),
     import("turndown-plugin-gfm"),
@@ -622,7 +646,10 @@ export function isImportableFile(file: File): boolean {
 }
 
 /** 根据扩展名导入文件 → { title, content }。 */
-export async function importDocument(file: File): Promise<ImportedDocument> {
+export async function importDocument(
+  file: File,
+  options: ImportOptions = {},
+): Promise<ImportedDocument> {
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   const title = file.name.replace(/\.[^.]+$/, "") || "导入的文档";
 
@@ -633,7 +660,7 @@ export async function importDocument(file: File): Promise<ImportedDocument> {
     return { title: parseFrontMatter(content).title ?? title, content };
   }
   if (ext === "docx") {
-    return { title, content: await docxToMarkdown(file) };
+    return { title, content: await docxToMarkdown(file, options.onImage) };
   }
   if (ext === "pdf") {
     return { title, content: await pdfToMarkdown(file) };

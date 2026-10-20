@@ -27,6 +27,8 @@ import { defaultViewMode, useUiStore, type ViewMode } from "@/stores/uiStore";
 import { DEFAULT_PREVIEW_CSS } from "@/features/preview/themes";
 import { hydrateMarkdown, releaseBlobUrls } from "@/data/blobStore";
 import { isImageFile, resolveUploadTarget } from "@/data/imageHost";
+import { countMarkdownImageCandidates, prepareMarkdownExport } from "@/data/export/markdown";
+import type { ExportImageStats } from "@/data/export/prepare";
 import {
   buildHtmlDocument,
   buildPrintDocument,
@@ -376,20 +378,85 @@ export function EditorPane({ noteId, onBack, onDeleted }: Props) {
     setMenuOpen(false);
     try {
       if (kind === "md") {
-        downloadText(safeFilename(title, "md"), value);
-        toastSuccess("已导出 Markdown");
+        // 导出副本里的图片统一转图床，避免 .md 内嵌 base64 过大；笔记本身不改
+        const candidates = countMarkdownImageCandidates(value);
+        const taskId =
+          candidates > 0
+            ? useTaskProgressStore.getState().begin("正在上传图片到图床", candidates)
+            : null;
+        if (candidates > 0 && taskId === null) {
+          toastWarning("已有图片任务正在进行，请稍后再试");
+          return;
+        }
+        try {
+          const { content, stats } = await prepareMarkdownExport(value, {
+            onProgress: (progress) => {
+              if (taskId !== null) useTaskProgressStore.getState().update(taskId, progress);
+            },
+            onSpeed: (speed) => {
+              if (taskId !== null) useTaskProgressStore.getState().update(taskId, { speed });
+            },
+          });
+          downloadText(safeFilename(title, "md"), content);
+          const replaced = stats.uploaded + stats.reused;
+          if (stats.failed > 0) {
+            toastWarning(
+              `已导出 Markdown，但 ${stats.failed} 张图片上传失败，仍保留本地引用`,
+              6000,
+            );
+          } else if (replaced > 0) {
+            toastSuccess(`已导出 Markdown（${replaced} 张图片转为图床链接）`);
+          } else {
+            toastSuccess("已导出 Markdown");
+          }
+        } finally {
+          if (taskId !== null) useTaskProgressStore.getState().end(taskId);
+        }
         return;
       }
       if (kind === "html") {
-        // Mermaid → 内联 SVG；附件 → data URL，保证单文件离线可看
-        const body = await prepareExportHtml(await renderForExport(), {
-          mermaid: "svg",
-          onUnresolved: (urls) =>
-            toastWarning(`${urls.length} 个外链资源无法内联，导出文件中的图片需要联网查看`, 6000),
-        });
-        const doc = await buildHtmlDocument(title, body, css);
-        downloadText(safeFilename(title, "html"), doc, "text/html");
-        toastSuccess("已导出 HTML");
+        // Mermaid → 内联 SVG；图片上传图床（失败回退内联），附件仍内联保证单文件可读
+        const candidates = countMarkdownImageCandidates(value);
+        const statsBox: { current: ExportImageStats | null } = { current: null };
+        const taskId =
+          candidates > 0
+            ? useTaskProgressStore.getState().begin("正在上传图片到图床", candidates)
+            : null;
+        if (candidates > 0 && taskId === null) {
+          toastWarning("已有图片任务正在进行，请稍后再试");
+          return;
+        }
+        try {
+          const body = await prepareExportHtml(await renderForExport(), {
+            mermaid: "svg",
+            images: "host",
+            onUnresolved: (urls) =>
+              toastWarning(`${urls.length} 个外链资源无法内联，导出文件中的附件需要联网查看`, 6000),
+            onImageProgress: (progress) => {
+              if (taskId !== null) useTaskProgressStore.getState().update(taskId, progress);
+            },
+            onImageSpeed: (speed) => {
+              if (taskId !== null) useTaskProgressStore.getState().update(taskId, { speed });
+            },
+            onImageStats: (stats) => {
+              statsBox.current = stats;
+            },
+          });
+          const doc = await buildHtmlDocument(title, body, css);
+          downloadText(safeFilename(title, "html"), doc, "text/html");
+          const imageStats = statsBox.current;
+          const hosted = (imageStats?.uploaded ?? 0) + (imageStats?.reused ?? 0);
+          const failed = (imageStats?.fallbacks ?? 0) + (imageStats?.failed ?? 0);
+          if (failed > 0) {
+            toastWarning(`已导出 HTML，但 ${failed} 张图片上传失败，已回退内联或保留原链接`, 6000);
+          } else if (hosted > 0) {
+            toastSuccess(`已导出 HTML（${hosted} 张图片转为图床链接）`);
+          } else {
+            toastSuccess("已导出 HTML");
+          }
+        } finally {
+          if (taskId !== null) useTaskProgressStore.getState().end(taskId);
+        }
         return;
       }
       if (kind === "docx") {

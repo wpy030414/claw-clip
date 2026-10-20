@@ -140,6 +140,11 @@ export function dehydrateMarkdown(md: string): string {
   });
 }
 
+/** 由运行时 object URL 反查 blob id（HTML 导出上传本地图片前定位记录）。 */
+export function getBlobIdForUrl(url: string): string | undefined {
+  return urlToId.get(url);
+}
+
 /** revoke 全部缓存的 object URL 并清空双向映射（切笔记/组件卸载时调用，防泄漏）。 */
 export function releaseBlobUrls(): void {
   for (const url of urlCache.values()) URL.revokeObjectURL(url);

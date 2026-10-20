@@ -121,23 +121,31 @@ AppShell 内，用原生 `<dialog>.showModal()` 进入 top layer 后自绘；这
 
 预览区在「分屏 / 预览」视图启用；「仅编辑」视图下不渲染，导出时用**当前正文重新渲染一次**
 （`renderForExport`，避免 120ms 防抖缓存导出上一版）。
-预览与导出**共用同一份 HTML 与内置排版 CSS**；导出前统一经 `prepareExportHtml()` 把运行时资源
-变成自包含产物：附件 `blob:`/`http(s):` → data URL，```mermaid → 内联 SVG（HTML/PDF）或 2× PNG
-（DOCX）。DOCX 用 docx 库按预览语义设置字体/标题/引用/代码/表格样式；公式从 KaTeX 的 TeX
+预览与导出**共用同一份 HTML 与内置排版 CSS**；导出前统一经 `prepareExportHtml()` 处理运行时资源。
+图片有两种策略：`inline`（DOCX/PDF）把 `blob:`/`http(s):` → data URL，保证产物自包含；`host`
+（HTML 导出）把本地 `blob:` 与内联 base64 上传图床（复用 `BlobRecord.remoteUrl` 缓存），已有外链
+原样保留，上传失败回退为 data URL。```mermaid 始终渲染为内联 SVG（HTML/PDF）或 2× PNG（DOCX）。
+DOCX 用 docx 库按预览语义设置字体/标题/引用/代码/表格样式；公式从 KaTeX 的 TeX
 annotation 经 `docx/math::latexToMath()` 转成 Word 原生 OMML。PDF 把同一份 HTML 写进离屏
 iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜索），用户在打印对话框「另存为 PDF」。
 
 ### 导入 / 导出
 
 ```
-导出 MD   → 正文原文下载
-导出 HTML → 预览 CSS + 浅色高亮 + Mermaid SVG + 附件 data URL 内嵌为单文件（公式走原生 MathML，强制浅色）
-导出 DOCX → 渲染 HTML → 自包含预处理 → DOMParser → docx 库（公式 OMML、Mermaid PNG）
+导出 MD   → 正文原文下载；本地图片/内联 base64 上传图床并改写外链（复缓存、失败保留原引用）
+导出 HTML → 预览 CSS + 浅色高亮 + Mermaid SVG；图片转图床外链（公式走原生 MathML，强制浅色）
+导出 DOCX → 渲染 HTML → 自包含预处理（图片 data URL）→ DOMParser → docx 库（公式 OMML、Mermaid PNG）
 导出 PDF  → 同源 HTML（强制浅色/@page）→ 隐藏 iframe → 浏览器打印 → 另存为矢量 PDF
-导入 MD   → File.text()
-导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown
-导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落
+导入 MD   → File.text()；base64 必处理、本地图片尽力读取、外部图床外链原样保留
+导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown；内嵌图片按图床设置落盘
+导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落（不提取图片）
 ```
+
+导入图片统一走 `data/importImages.ts`：解析阶段先用临时 token 占位（DOCX 内嵌图片），笔记创建后
+按当前上传目标将图片存进 IDB 或上传图床，再把 token / 原引用替换为 `clawclip://` 或外链。处理顺序
+固定为「正文内联/本地图片 → DOCX 临时 token」，避免本地回退后新生成的 `clawclip://` 被二次扫描、
+重复上传。上传失败回退本地；读取失败保留原引用。导入异常时删除刚创建的笔记并
+`reconcileAttachmentRefs()` 回收无引用附件。
 
 ## 3. 响应式双形态
 
@@ -288,7 +296,9 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 - **图片上传目标**（`data/imageHost.ts` + `stores/integrationStore.ts`）：默认写本地
   `blobs`；切到 `img.scdn.io` 后，`EditorPane.insertFiles` 对图片调用
   `POST /api/v1.php`（multipart 字段 `image`，无鉴权，串行限流 5 次/5 秒），成功插入外链，
-  失败回退 `saveBlob` 并提示。外链不参与 `clawclip://` 引用计数与水合。
+  失败回退 `saveBlob` 并提示。外链不参与 `clawclip://` 引用计数与水合。同一设置也约束
+  **文档导入**（`data/importImages.ts` 的 `host`）与 **HTML 导出**（`prepareExportHtml` 的
+  `images: "host"`）；两者都复用 `data/imageUpload.ts` 的 `remoteUrl` 缓存，避免重复上传。
 - **云快照**（`data/snapshot.ts` + `data/cloudSync.ts`）：`exportAll()` 后只打包正文引用的
   附件；图片先上传图床并把快照副本里的 `clawclip://` 换成外链（结果缓存进
   `BlobRecord.remoteUrl`），本地笔记保持不变。快照超过 10MB 时按体积剔除最大的非图片附件
@@ -314,9 +324,9 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
-  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、速度计、导入语义、
-  front matter 投影等（373 例）。
-- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，79 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、导入图片落盘、
+  HTML/MD 导出图片外链、速度计、导入语义、front matter 投影等（393 例）。
+- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，83 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
   文件夹折叠与删除确认/上传导入/front matter 导入与导出保真/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
   全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）/
@@ -337,8 +347,11 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | ------------------------------------------- | ------------------------------------------------------- |
 | `src/data/db.ts` / `local.ts` / `query.ts`  | IndexedDB 连接、CRUD、过滤排序分页                      |
 | `src/data/exchange.ts`                      | MD/DOCX/PDF 导入导出门面（重型依赖动态加载）            |
+| `src/data/imageAssets.ts`                   | 图片引用识别/分类、data URL ⇄ Blob（导入导出共用）      |
+| `src/data/imageUpload.ts`                   | 图床统一的缓存上传入口：复用并回填 `remoteUrl`          |
+| `src/data/importImages.ts`                  | 导入图片按图床设置落盘 IDB/外链并改写导入副本           |
 | `src/data/searchAll.ts`                     | 全库搜索：内存过滤 + 相关度评分 + 片段生成              |
-| `src/data/export/prepare.ts`                | 导出自包含预处理：附件 data URL + Mermaid 渲染          |
+| `src/data/export/prepare.ts`                | 导出预处理：图片内联/图床策略 + Mermaid 渲染            |
 | `src/data/export/math.ts`                   | KaTeX TeX → docx 原生 OMML（`docx/math`）               |
 | `src/data/export/html.ts`                   | 独立 HTML / 打印文档构建（MathML、浅色纸面、`@page`）   |
 | `src/data/export/print.ts`                  | 隐藏 iframe → 浏览器打印（矢量 PDF）                    |
@@ -361,8 +374,9 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 
 - **移动端不分屏**：<900px 时「分屏」退化为纯编辑，预览通过顶栏切到「预览」整页查看。
 - **HTML 导出使用原生 MathML**：为避免单文件依赖 KaTeX 字体，导出文档隐藏 `.katex-html`、改用 MathML；
-  现代浏览器可正常显示，老旧浏览器公式退化为纯文本。Mermaid 在导出时渲染为内联 SVG，附件内联为
-  data URL，因此单文件可离线打开。
+  现代浏览器可正常显示，老旧浏览器公式退化为纯文本。Mermaid 渲染为内联 SVG。图片默认上传图床并
+  写成外链（上传失败才回退 data URL），因此导出的 HTML 不再保证图片可离线查看；样式、公式与图表
+  仍随文件自包含。
 - **PDF 走浏览器打印**：产物是矢量文字（可选中/搜索），但需要在系统打印对话框里选择「另存为 PDF」；
   公式显示依赖浏览器的 MathML 支持。
 - **PDF 回导是启发式的**：只保证文字可编辑，不保证版式、表格、图片还原。

@@ -6,3 +6,9 @@ declare module "markdown-it-sub";
 declare module "markdown-it-sup";
 declare module "markdown-it-mark";
 declare module "turndown-plugin-gfm";
+
+/** jsdom 单测走 mammoth 的浏览器构建，与生产环境保持一致的 arrayBuffer 输入。 */
+declare module "mammoth/mammoth.browser.js" {
+  import mammoth = require("mammoth");
+  export = mammoth;
+}

@@ -1,11 +1,77 @@
 import { readFileSync } from "node:fs";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 
 /**
  * 工作站能力 E2E：文件夹树、导入、导出（MD/DOCX/PDF）、菜单精简与删除确认。
  */
 
 const EDITOR = '[data-testid="md-editor"] .cm-content';
+// 1x1 透明 PNG
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type, accept",
+};
+
+async function dropPng(page: Page): Promise<void> {
+  const dataTransfer = await page.evaluateHandle((base64: string) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], "dot.png", { type: "image/png" }));
+    return dt;
+  }, PNG.toString("base64"));
+  await page.dispatchEvent(EDITOR, "drop", { dataTransfer });
+}
+
+async function blobCount(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open("claw-clip-v2");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return new Promise<number>((resolve, reject) => {
+      const tx = db.transaction("blobs", "readonly");
+      const req = tx.objectStore("blobs").count();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+function mockImageHost(route: Route, url: string): Promise<void> {
+  return route.fulfill({
+    status: 200,
+    headers: { ...CORS_HEADERS, "content-type": "application/json" },
+    body: JSON.stringify({ success: true, data: { url } }),
+  });
+}
+
+async function makeDocxWithImage(): Promise<Buffer> {
+  const { Document, ImageRun, Packer, Paragraph } = await import("docx");
+  const source = new Document({
+    sections: [
+      {
+        children: [
+          new Paragraph({
+            children: [
+              new ImageRun({
+                data: Uint8Array.from(PNG),
+                type: "png",
+                transformation: { width: 8, height: 8 },
+              }),
+            ],
+          }),
+        ],
+      },
+    ],
+  });
+  return Buffer.from(await Packer.toBuffer(source));
+}
 
 test("笔记树：新建文件夹 → 点击行开合 → 文件夹内/根级新建笔记", async ({ page }) => {
   await page.goto("");
@@ -291,6 +357,49 @@ test("导入 Markdown → 新建笔记并进入编辑器", async ({ page }) => {
   await expect(page.getByTestId("note-tags")).toHaveCount(0);
 });
 
+test("导入 Markdown：内联 base64 存进 IDB，其它图床外链保持原样", async ({ page }) => {
+  await page.goto("");
+
+  const dataUrl = `data:image/png;base64,${PNG.toString("base64")}`;
+  await page.getByTestId("import-input").setInputFiles({
+    name: "带图笔记.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(
+      `# 内联图片\n\n![内联](${dataUrl})\n\n![外链](https://other.example/x.png)`,
+      "utf8",
+    ),
+  });
+
+  await expect(page.getByTestId("editor-title")).toHaveText("带图笔记", { timeout: 10_000 });
+  const source = page.locator(EDITOR).first();
+  await expect
+    .poll(async () => source.innerText(), { timeout: 10_000 })
+    .toContain("clawclip://blob/");
+  const text = await source.innerText();
+  expect(text).toContain("https://other.example/x.png");
+  expect(text).not.toContain("data:image");
+  expect(await blobCount(page)).toBe(1);
+});
+
+test("导入 DOCX：内嵌图片存进 IDB，不再内联 base64", async ({ page }) => {
+  await page.goto("");
+
+  const buffer = await makeDocxWithImage();
+  await page.getByTestId("import-input").setInputFiles({
+    name: "带图文档.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer,
+  });
+
+  await expect(page.getByTestId("editor-title")).toHaveText("带图文档", { timeout: 15_000 });
+  const source = page.locator(EDITOR).first();
+  await expect
+    .poll(async () => source.innerText(), { timeout: 10_000 })
+    .toContain("clawclip://blob/");
+  expect(await source.innerText()).not.toContain("data:image");
+  expect(await blobCount(page)).toBe(1);
+});
+
 test("front matter：导入取 title、预览隐藏、MD 导出保留原文", async ({ page }) => {
   await page.goto("");
 
@@ -338,6 +447,35 @@ test("front matter：导入取 title、预览隐藏、MD 导出保留原文", as
   const exported = readFileSync((await download.path())!, "utf-8");
   expect(exported).toContain("---\ntitle: 属性标题");
   expect(exported).toContain("tags: [工作, 笔记]");
+});
+
+test("导出 Markdown：本地图片转图床外链，笔记仍保留本地引用", async ({ page }) => {
+  await page.route("https://img.scdn.io/**", (route) =>
+    mockImageHost(route, "https://img.cdn1.vip/i/exported.webp"),
+  );
+
+  await page.goto("");
+  await page.getByTestId("btn-new").click();
+  await page.getByTestId("create-note").click();
+  await page.waitForSelector(EDITOR, { timeout: 15_000 });
+  await page.locator(EDITOR).first().click();
+  await dropPng(page);
+  await expect(page.getByTestId("save-state")).toHaveText("已保存", { timeout: 5_000 });
+
+  await page.getByTestId("btn-menu").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 15_000 }),
+    page.getByTestId("menu-export-md").click(),
+  ]);
+  const exported = readFileSync((await download.path())!, "utf-8");
+  expect(exported).toContain("https://img.cdn1.vip/i/exported.webp");
+  expect(exported).not.toContain("clawclip://");
+
+  // 导出只改副本：笔记正文与本地附件都不动
+  await expect
+    .poll(async () => page.locator(EDITOR).first().innerText(), { timeout: 5_000 })
+    .toContain("clawclip://blob/");
+  expect(await blobCount(page)).toBe(1);
 });
 
 test("导出 Markdown 与 DOCX", async ({ page }) => {
