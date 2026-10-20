@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { test, expect, type Page, type Route } from "@playwright/test";
 
 /**
- * 工作站能力 E2E：文件夹树、导入、导出（MD/DOCX/PDF）、菜单精简与删除确认。
+ * 工作站能力 E2E：文件夹树、导入（MD/HTML/DOCX）、导出（MD/DOCX/PDF）、菜单精简与删除确认。
  */
 
 const EDITOR = '[data-testid="md-editor"] .cm-content';
@@ -355,6 +355,39 @@ test("导入 Markdown → 新建笔记并进入编辑器", async ({ page }) => {
   });
   // 没有 tags 时不渲染空 chip 行
   await expect(page.getByTestId("note-tags")).toHaveCount(0);
+  // Markdown 导入尊重原始数据，不自动补 front matter
+  const source = page.locator(EDITOR).first();
+  await expect.poll(async () => source.innerText(), { timeout: 10_000 }).toContain("导入标题");
+  expect(await source.innerText()).not.toContain("title:");
+});
+
+test("导入 HTML：尽力转 Markdown，并补 front matter 标题", async ({ page }) => {
+  await page.goto("");
+
+  const html = [
+    "<!doctype html><html><head><title>网页标题</title></head><body>",
+    "<h1>网页标题</h1>",
+    "<p>网页正文</p>",
+    "<script>alert('x')</script>",
+    "</body></html>",
+  ].join("");
+  await page.getByTestId("import-input").setInputFiles({
+    name: "网页导入.html",
+    mimeType: "text/html",
+    buffer: Buffer.from(html, "utf-8"),
+  });
+
+  await expect(page.getByTestId("editor-title")).toHaveText("网页导入", { timeout: 10_000 });
+  await expect(page.getByTestId("md-preview").locator("h1").first()).toContainText("网页标题", {
+    timeout: 10_000,
+  });
+  await expect(page.getByTestId("md-preview")).toContainText("网页正文");
+
+  const source = page.locator(EDITOR).first();
+  await expect
+    .poll(async () => source.innerText(), { timeout: 10_000 })
+    .toContain('title: "网页导入"');
+  expect(await source.innerText()).not.toContain("alert");
 });
 
 test("导入 Markdown：内联 base64 存进 IDB，其它图床外链保持原样", async ({ page }) => {
@@ -393,6 +426,9 @@ test("导入 DOCX：内嵌图片存进 IDB，不再内联 base64", async ({ page
 
   await expect(page.getByTestId("editor-title")).toHaveText("带图文档", { timeout: 15_000 });
   const source = page.locator(EDITOR).first();
+  await expect
+    .poll(async () => source.innerText(), { timeout: 10_000 })
+    .toContain('title: "带图文档"');
   await expect
     .poll(async () => source.innerText(), { timeout: 10_000 })
     .toContain("clawclip://blob/");

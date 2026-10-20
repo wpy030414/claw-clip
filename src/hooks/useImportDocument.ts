@@ -1,5 +1,5 @@
 /**
- * useImportDocument：导入 MD / DOCX / PDF → 新建笔记 → 跳转编辑器。
+ * useImportDocument：导入 MD / HTML / DOCX / PDF → 新建笔记 → 跳转编辑器。
  * 解析在 exchange.ts（重型依赖动态加载），本 hook 负责编排、图片落盘与提示。
  *
  * 导入文档里的图片按当前图床设置处理：

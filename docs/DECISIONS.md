@@ -1441,3 +1441,21 @@ E2E 覆盖「上传期间进度浮层可见且 Esc 无法关闭」「全部上�
 **后果**：HTML 导出不再保证图片离线可看（样式、公式、Mermaid 仍自包含）；外部图床图片在离线环境下同样无法显示。图床目标下导出依赖网络，上传失败的 MD 副本可能残留 `clawclip://` 引用（仅在本应用内有效）。导入相对路径图片会以应用当前 origin 解析，路径不在站点内时按读取失败保留原引用。导入图片按笔记 ID 建立引用计数，失败清理依赖导入流程的补偿逻辑。
 
 **验证**：`importImages.spec.ts` 覆盖 base64/本地/外链分流、缓存复用、上传失败回退、DOCX 图片与悬空引用；`markdownExport.spec.ts` 覆盖本地图片上传、缓存复用、外链保留与失败回退；`htmlExport.spec.ts` 覆盖本地/内联图片转外链、缓存复用与失败回退 data URL；`exchange.spec.ts` 覆盖 DOCX 图片 token 与导入 title。E2E `s6-workstation.spec.ts` 覆盖 MD/DOCX 导入落盘与 MD 导出外链、`s4-attachment.spec.ts` 覆盖 HTML 导出外链、`s8-storage.spec.ts` 覆盖图床设置下的导入；`vp check` / `vp test run`（393 例）/ `pnpm run build` / Playwright（83 例）全绿。
+
+## ADR-057 · 导入支持 HTML（尽力解析），非 Markdown 导入自动补 title front matter ✅
+
+**背景**：网页剪藏与文档站点的 `.html` 是常见的 Markdown 来源，但导入白名单只有 MD/DOCX/PDF，用户只能先手工转一遍。另一方面，DOCX/PDF/TXT 导入出来的笔记没有任何元数据：标题只存在 `Note.title` 字段里，正文本身看不出来源，导出 MD 后标题信息就丢了——而应用已经有 front matter 的投影能力（ADR-054），却没有写入入口。
+
+**决策**：
+
+- **HTML 导入**：`DOMParser` 解析后只取 `body`，移除 `script`/`style`/`noscript`/`template`，再交给已有的 turndown(+gfm) 转 Markdown——与 DOCX 共用同一个 `turndownHtml()`，不新增转换器。定位是**尽力解析**：不保证版式、不解析 `<style>` 语义、不还原脚本渲染的内容；图片保留为 Markdown 引用，随后由 ADR-056 的图片管线按图床设置落盘。
+- **白名单**：`IMPORT_EXTENSIONS` 增加 `html`/`htm`，侧栏拖入与「上传笔记」共用同一份，因此两处入口与提示文案同步更新。
+- **自动 front matter**：`importDocument()` 对 TXT/HTML/DOCX/PDF 在正文前补 `---\ntitle: "<原文件名去扩展名>"\n---`。标题用 JSON.stringify 生成 YAML 双引号标量，文件名里的 `:`/`#`/引号不会破坏解析；`title` 走 ADR-054 的投影，因此笔记标题与正文元数据一致。
+- **Markdown 豁免**：`.md`/`.markdown` 导入不生成、不补键、不改写已有 front matter，正文逐字节保留。Markdown 是唯一「作者可能自己写了元数据」的格式，自动插入 `title` 会覆盖来源工具的约定（Obsidian/Hugo 等），也与 ADR-054 的原文保真承诺冲突。
+- **边界**：全库备份与云快照恢复不走 `importDocument()`，因此不补 front matter；导出不受影响（MD/HTML 导出仍只改副本）。
+
+**理由**：HTML 导入复用 DOCX 已有的 HTML→Markdown 通路，成本只有「解析 + 去噪」两步，不值得为「尽力解析」引入 readability 之类的正文抽取依赖。自动 front matter 选在 `importDocument()` 这一层，是因为它同时是侧栏拖入与「上传笔记」的唯一入口，一处改动覆盖所有导入路径；而把 Markdown 排除在外，是在「元数据可见」与「不改用户文件」之间保留后者的优先级。
+
+**后果**：DOCX/PDF/TXT/HTML 导入的笔记正文开头多三行元数据，预览/导出/字数/搜索都按 ADR-054 隐藏它，但 MD 导出与备份会逐字节带上——这是有意的，导出后标题不丢。front matter 的 `title` 与 `importDocument()` 已返回的文件名一致，因此笔记标题不变，只是把来源文件名落进正文、可被导出与投影消费。HTML 导入的质量取决于源站结构：依赖脚本渲染、或正文藏在 `<style>`/canvas 里的页面只会得到很少内容。
+
+**验证**：`exchange.spec.ts` 覆盖 TXT/HTML 导入补 front matter、脚本被丢弃、内联图片转为 Markdown 引用、Markdown 原文逐字节保留、DOCX 图片 token 与 front matter 共存；E2E `s6-workstation.spec.ts` 覆盖 HTML 导入的标题、预览渲染、front matter 落盘与脚本不残留，以及 Markdown 导入不补 front matter；`vp check` / `vp test run` / `pnpm run build` / Playwright 全绿。

@@ -59,6 +59,33 @@ describe("importDocument", () => {
     expect(doc.content).toBe(content);
   });
 
+  it("导入 TXT：补 front matter，正文原样保留", async () => {
+    const file = new File(["第一行\n\n第二行"], "草稿.txt", { type: "text/plain" });
+    const doc = await importDocument(file);
+    expect(doc.title).toBe("草稿");
+    expect(doc.content).toBe('---\ntitle: "草稿"\n---\n\n第一行\n\n第二行');
+  });
+
+  it("导入 HTML：尽力转 Markdown，补 front matter，忽略脚本", async () => {
+    const html = [
+      "<!doctype html><html><head><title>网页标题</title></head><body>",
+      "<h1>网页标题</h1>",
+      "<p>正文 <strong>加粗</strong></p>",
+      '<p><img alt="图" src="data:image/png;base64,AAAA"></p>',
+      "<script>alert('x')</script>",
+      "</body></html>",
+    ].join("");
+    const file = new File([html], "网页.html", { type: "text/html" });
+    const doc = await importDocument(file);
+
+    expect(doc.title).toBe("网页");
+    expect(doc.content.startsWith('---\ntitle: "网页"\n---\n\n')).toBe(true);
+    expect(doc.content).toContain("# 网页标题");
+    expect(doc.content).toContain("**加粗**");
+    expect(doc.content).toContain("![图](data:image/png;base64,AAAA)");
+    expect(doc.content).not.toContain("alert");
+  });
+
   it("不支持的扩展名抛错", async () => {
     const file = new File(["x"], "a.xyz", { type: "text/plain" });
     await expect(importDocument(file)).rejects.toThrow(/不支持/);
@@ -110,6 +137,7 @@ describe("importDocument", () => {
 
     expect(images).toHaveLength(1);
     expect(images[0].type).toBe("image/png");
+    expect(doc.content.startsWith('---\ntitle: "带图文档"\n---\n\n')).toBe(true);
     expect(doc.content).toContain("clawclip-import://image/0");
     expect(doc.content).not.toContain("data:image");
   }, 20_000);

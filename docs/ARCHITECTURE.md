@@ -1,6 +1,6 @@
 # 架构文档（ARCHITECTURE）
 
-> 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、预览同源的 DOCX/PDF 导出、MD/DOCX/PDF 互导。
+> 鲨鱼夹 ClawClip —— 本地优先的 Markdown 工作站：文件夹树、扩展语法、预览同源的 DOCX/PDF 导出、MD/HTML/DOCX/PDF 互导。
 > Vite+（Vite 8 / Rolldown）+ React 19.3 + TypeScript 5.9 + @m3e/react（Material 3 Web Components）+ CodeMirror 6（源码编辑）+ markdown-it（实时预览/导出渲染）+ docx / docx-math（原生 Word 公式）+ 浏览器打印（矢量 PDF）+ Zustand + IndexedDB。
 >
 > 编辑工作区对标 markdownassistant：**左源码 + 右实时预览 + 格式工具栏**，三态视图（编辑 / 分屏 / 预览）。
@@ -136,9 +136,11 @@ iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜
 导出 HTML → 预览 CSS + 浅色高亮 + Mermaid SVG；图片转图床外链（公式走原生 MathML，强制浅色）
 导出 DOCX → 渲染 HTML → 自包含预处理（图片 data URL）→ DOMParser → docx 库（公式 OMML、Mermaid PNG）
 导出 PDF  → 同源 HTML（强制浅色/@page）→ 隐藏 iframe → 浏览器打印 → 另存为矢量 PDF
-导入 MD   → File.text()；base64 必处理、本地图片尽力读取、外部图床外链原样保留
-导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown；内嵌图片按图床设置落盘
-导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落（不提取图片）
+导入 MD   → File.text()；原文与已有 front matter 保持不变
+导入 TXT  → File.text()；正文前补 front matter
+导入 HTML → DOMParser 取 body（去脚本/样式）→ turndown(+gfm) → Markdown；补 front matter
+导入 DOCX → mammoth（docx→HTML）→ turndown(+gfm) → Markdown；补 front matter；内嵌图片按图床设置落盘
+导入 PDF  → pdf.js 抽文本 → 按字号/行距启发式重建标题与段落；补 front matter（不提取图片）
 ```
 
 导入图片统一走 `data/importImages.ts`：解析阶段先用临时 token 占位（DOCX 内嵌图片），笔记创建后
@@ -146,6 +148,11 @@ iframe 调 `print()`，由浏览器排版为 A4 矢量 PDF（文字可选中/搜
 固定为「正文内联/本地图片 → DOCX 临时 token」，避免本地回退后新生成的 `clawclip://` 被二次扫描、
 重复上传。上传失败回退本地；读取失败保留原引用。导入异常时删除刚创建的笔记并
 `reconcileAttachmentRefs()` 回收无引用附件。
+
+除 Markdown 外，所有导入都由 `importDocument()` 在正文前补一段
+`---\ntitle: "<原文件名>"\n---`：YAML 双引号标量保证文件名里的 `:` / `#` 不破坏解析；TXT 的原文、
+HTML/DOCX/PDF 的转换结果都原样放在元数据之后。Markdown 导入豁免该规则——不生成、不补键、不改写
+已有 front matter，继续遵循 ADR-054 的原文保真约定。
 
 ## 3. 响应式双形态
 
@@ -325,10 +332,10 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 - **Vitest 单测**（jsdom + fake-indexeddb）：data/stores/hooks/utils，覆盖渲染管线扩展语法、
   文件夹 CRUD/排序/归一化、IDB 统计与字节格式化、DOCX 导出、导入分发、查询过滤/分页、
   自动保存与快捷键、存储报告、云快照、Gist 客户端、图床客户端与双向迁移、导入图片落盘、
-  HTML/MD 导出图片外链、速度计、导入语义、front matter 投影等（393 例）。
-- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，83 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
+  HTML/MD 导出图片外链、速度计、导入语义、front matter 投影等（395 例）。
+- **Playwright E2E**（chromium，dev server 默认根路径，可用 `PAGES_BASE_PATH` 切到子路径，84 例）：编辑/实时预览/格式工具栏/快捷键/视图切换/
   自动保存/刷新持久化/原地编辑 id 不变/附件闭环/双形态断点切换/侧栏页签与收起/笔记树新建与归属/
-  文件夹折叠与删除确认/上传导入/front matter 导入与导出保真/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
+  文件夹折叠与删除确认/上传导入/HTML 导入与导入 front matter/front matter 导入与导出保真/导出 MD/HTML/DOCX/PDF 直接下载/导出菜单精简/存储空间 dialog/
   全库备份导出导入与清空/图床与 Gist 同步（外部请求用 `page.route` mock）/
   图床双向迁移与阻塞式进度。
 - 选择器约定：编辑区 `[data-testid="md-editor"] .cm-content`；预览 `[data-testid="md-preview"]`；
@@ -346,7 +353,7 @@ store 与 `notes.folderId` 索引，v2→v3 删除已废弃的 `starred` 索引�
 | 文件                                        | 职责                                                    |
 | ------------------------------------------- | ------------------------------------------------------- |
 | `src/data/db.ts` / `local.ts` / `query.ts`  | IndexedDB 连接、CRUD、过滤排序分页                      |
-| `src/data/exchange.ts`                      | MD/DOCX/PDF 导入导出门面（重型依赖动态加载）            |
+| `src/data/exchange.ts`                      | MD/HTML/DOCX/PDF 导入导出门面（重型依赖动态加载）       |
 | `src/data/imageAssets.ts`                   | 图片引用识别/分类、data URL ⇄ Blob（导入导出共用）      |
 | `src/data/imageUpload.ts`                   | 图床统一的缓存上传入口：复用并回填 `remoteUrl`          |
 | `src/data/importImages.ts`                  | 导入图片按图床设置落盘 IDB/外链并改写导入副本           |

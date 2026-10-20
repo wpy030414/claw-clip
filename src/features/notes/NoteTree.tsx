@@ -95,7 +95,7 @@ export function NoteTree() {
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [dragOverRoot, setDragOverRoot] = useState(false);
-  /** 外部文件拖入（MD / DOCX / PDF）高亮。 */
+  /** 外部文件拖入（MD / HTML / DOCX / PDF）高亮。 */
   const [fileDragOver, setFileDragOver] = useState(false);
 
   // —— 文件夹拖拽排序 ——
@@ -399,7 +399,7 @@ export function NoteTree() {
       const files = Array.from(e.dataTransfer?.files ?? []);
       const accepted = files.filter(isImportableFile);
       if (accepted.length < files.length) {
-        toastError("仅支持 Markdown / DOCX / PDF 文件");
+        toastError("仅支持 Markdown / HTML / DOCX / PDF 文件");
       }
       // 依次导入并打开；每份都会新建一条笔记
       void (async () => {
@@ -954,7 +954,7 @@ export function NoteTree() {
             <span className="material-symbols-outlined">upload_file</span>
             <span className="create-dialog-option-text">
               <strong>上传笔记</strong>
-              <span>导入 MD / DOCX / PDF 为一条笔记</span>
+              <span>导入 MD / HTML / DOCX / PDF 为一条笔记</span>
             </span>
           </button>
         </div>

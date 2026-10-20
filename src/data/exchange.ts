@@ -1,5 +1,5 @@
 /**
- * 导入 / 导出（MD / DOCX / PDF）。
+ * 导入 / 导出（MD / HTML / DOCX / PDF）。
  *
  * - 导出 MD：正文经 `export/markdown.ts` 把本地图片上传图床并换成外链后下载。
  * - 导出 HTML：单文件自包含——Mermaid 内联 SVG、附件 data URL、公式走原生 MathML。
@@ -7,9 +7,11 @@
  *   Mermaid 转高清 PNG，图片按原始比例缩放。
  * - 导出 PDF：同源 HTML（强制浅色纸面）→ 隐藏 iframe → 浏览器打印，
  *   产出可选中/搜索的矢量 PDF，由用户「另存为 PDF」。
- * - 导入 MD / DOCX / PDF：DOCX 用 mammoth→HTML→turndown；PDF 用 pdf.js 抽文本 +
- *   字号/行距启发式重建标题与段落。DOCX 内嵌图片经 `onImage` 交给调用方持久化
- *   （不传时保留 mammoth 默认的 data URL）。
+ * - 导入 MD / HTML / DOCX / PDF：HTML 与 DOCX 都经 turndown 转 Markdown；
+ *   PDF 用 pdf.js 抽文本 + 字号/行距启发式重建标题与段落。DOCX 内嵌图片经
+ *   `onImage` 交给调用方持久化（不传时保留 mammoth 默认的 data URL）。
+ * - 非 Markdown 导入统一补 YAML front matter（`title` 为原始文件名），
+ *   Markdown 导入保持原文，尊重用户已有元数据。
  *
  * 重型依赖（docx / docx/math / mammoth / turndown / pdfjs-dist）全部动态 import，
  * 不进入首屏包体。
@@ -497,8 +499,22 @@ export async function htmlToDocx(
 }
 
 /* ------------------------------------------------------------------ */
-/* 导入（MD / DOCX / PDF）                                             */
+/* 导入（MD / HTML / DOCX / PDF）                                      */
 /* ------------------------------------------------------------------ */
+
+async function turndownHtml(html: string): Promise<string> {
+  const [{ default: TurndownService }, { gfm }] = await Promise.all([
+    import("turndown"),
+    import("turndown-plugin-gfm"),
+  ]);
+  const td = new TurndownService({
+    headingStyle: "atx",
+    bulletListMarker: "-",
+    codeBlockStyle: "fenced",
+  });
+  td.use(gfm);
+  return td.turndown(html).trim();
+}
 
 async function docxToMarkdown(
   file: File,
@@ -517,17 +533,14 @@ async function docxToMarkdown(
         }
       : undefined,
   );
-  const [{ default: TurndownService }, { gfm }] = await Promise.all([
-    import("turndown"),
-    import("turndown-plugin-gfm"),
-  ]);
-  const td = new TurndownService({
-    headingStyle: "atx",
-    bulletListMarker: "-",
-    codeBlockStyle: "fenced",
-  });
-  td.use(gfm);
-  return td.turndown(result.value).trim();
+  return turndownHtml(result.value);
+}
+
+/** HTML → Markdown：只取 body，去掉脚本/样式等非正文节点后尽力转换。 */
+async function htmlToMarkdown(file: File): Promise<string> {
+  const doc = new DOMParser().parseFromString(await file.text(), "text/html");
+  doc.querySelectorAll("script, style, noscript, template").forEach((node) => node.remove());
+  return turndownHtml(doc.body.innerHTML);
 }
 
 /** PDF 文本项 → 行（按 y 分组，按 x 排序）。 */
@@ -634,8 +647,14 @@ async function pdfToMarkdown(file: File): Promise<string> {
   return out.join("\n\n");
 }
 
+/** 非 Markdown 导入补 front matter；双引号标量避免文件名里的 `:` / `#` 破坏 YAML。 */
+function withImportFrontMatter(content: string, title: string): string {
+  const body = content.replace(/^\uFEFF/, "").replace(/^(?:\r?\n)+/, "");
+  return `---\ntitle: ${JSON.stringify(title)}\n---\n\n${body}`;
+}
+
 /** 可导入的扩展名：侧栏拖入、「上传笔记」文件选择共用同一份白名单。 */
-export const IMPORT_EXTENSIONS = ["md", "markdown", "txt", "docx", "pdf"] as const;
+export const IMPORT_EXTENSIONS = ["md", "markdown", "txt", "html", "htm", "docx", "pdf"] as const;
 /** `<input type="file" accept>` 用的扩展名串。 */
 export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(",");
 
@@ -653,17 +672,26 @@ export async function importDocument(
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   const title = file.name.replace(/\.[^.]+$/, "") || "导入的文档";
 
-  if (ext === "md" || ext === "markdown" || ext === "txt") {
+  if (ext === "md" || ext === "markdown") {
     const content = await file.text();
-    // front matter 的 title 是文档自带的显式标题，优先于文件名；
-    // 正文保持原样，导出/备份时 front matter 仍逐字节保留。
+    // Markdown 尊重原始数据：不补 front matter。已有 title 是显式标题，
+    // 优先于文件名；正文保持原样，导出/备份逐字节保留。
     return { title: parseFrontMatter(content).title ?? title, content };
   }
+  if (ext === "txt") {
+    return { title, content: withImportFrontMatter(await file.text(), title) };
+  }
   if (ext === "docx") {
-    return { title, content: await docxToMarkdown(file, options.onImage) };
+    return {
+      title,
+      content: withImportFrontMatter(await docxToMarkdown(file, options.onImage), title),
+    };
   }
   if (ext === "pdf") {
-    return { title, content: await pdfToMarkdown(file) };
+    return { title, content: withImportFrontMatter(await pdfToMarkdown(file), title) };
+  }
+  if (ext === "html" || ext === "htm") {
+    return { title, content: withImportFrontMatter(await htmlToMarkdown(file), title) };
   }
   throw new Error(`不支持的文件类型：.${ext || "未知"}`);
 }
